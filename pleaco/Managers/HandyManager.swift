@@ -82,6 +82,7 @@ class HandyManager: ObservableObject {
         guard let url = URL(string: urlString) else { return }
         var request = URLRequest(url: url)
         request.httpMethod = method
+        request.timeoutInterval = 5.0 // 5 second timeout
         request.addValue(connectionKey, forHTTPHeaderField: "X-Connection-Key")
         
         if method != "GET" {

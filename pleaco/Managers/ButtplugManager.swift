@@ -13,9 +13,13 @@ class ButtplugManager: ObservableObject {
     var serverAddress: String = "ws://127.0.0.1:12345"
     
     private var webSocket: URLSessionWebSocketTask?
-    private let session = URLSession(configuration: .default)
+    private let session: URLSession
     
-    private init() {}
+    private init() {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 5.0
+        session = URLSession(configuration: config)
+    }
     
     func connect(completion: @escaping (Bool) -> Void) {
         guard let url = URL(string: serverAddress) else {

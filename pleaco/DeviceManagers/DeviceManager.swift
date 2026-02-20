@@ -261,31 +261,16 @@ class DeviceManager: ObservableObject {
 
         guard let device = device else { return }
 
+        // Configure managers without blocking
         switch device.type {
         case .handy:
             handyManager.connectionKey = device.connectionKey
             handyManager.deviceType = "The Handy"
-            handyManager.checkConnection { [weak self] success in
-                NSLog("🔔 DeviceManager: Handy connection checked. Success: \(success)")
-                device.isConnected = success
-                self?.objectWillChange.send()
-            }
         case .oh:
             handyManager.connectionKey = device.connectionKey
             handyManager.deviceType = "Oh."
-            handyManager.checkConnection { [weak self] success in
-                NSLog("🔔 DeviceManager: Oh connection checked. Success: \(success)")
-                device.isConnected = success
-                self?.objectWillChange.send()
-            }
         case .intiface:
             buttplugManager.serverAddress = device.serverAddress
-            buttplugManager.connect { [weak self] success in
-                DispatchQueue.main.async {
-                    device.isConnected = success
-                    self?.objectWillChange.send()
-                }
-            }
         case .internal:
             device.isConnected = hapticManager.isSupported
             if device.isConnected {
@@ -296,11 +281,36 @@ class DeviceManager: ObservableObject {
             objectWillChange.send()
         }
         
+        // Check connection asynchronously in background
+        checkDeviceConnectionAsync(device)
+        
         // Auto-start playback on selection if requested
         if autoStart {
             DispatchQueue.main.async {
                 self.start()
             }
+        }
+    }
+    
+    private func checkDeviceConnectionAsync(_ device: SavedDevice) {
+        switch device.type {
+        case .handy, .oh:
+            handyManager.checkConnection { [weak self] success in
+                NSLog("🔔 DeviceManager: \(device.type.rawValue) connection checked. Success: \(success)")
+                DispatchQueue.main.async {
+                    device.isConnected = success
+                    self?.objectWillChange.send()
+                }
+            }
+        case .intiface:
+            buttplugManager.connect { [weak self] success in
+                DispatchQueue.main.async {
+                    device.isConnected = success
+                    self?.objectWillChange.send()
+                }
+            }
+        case .internal:
+            break
         }
     }
 
@@ -742,12 +752,22 @@ class DeviceManager: ObservableObject {
         self.defaultIntensity = savedIntensity > 0 ? savedIntensity : 50
         self.currentLevel = self.defaultIntensity
 
-        // Then restore active device if exists
+        // Then restore active device if exists - but DON'T connect yet
         guard let idString = UserDefaults.standard.string(forKey: "activeDeviceId"),
               let uuid = UUID(uuidString: idString) else { return }
               
         if let device = devices.first(where: { $0.id == uuid }) {
-            setActiveDevice(device, autoStart: false)
+            // Just set the device ID without connecting - connection will be checked lazily
+            activeDeviceId = device.id
+            switch device.type {
+            case .handy, .oh:
+                handyManager.connectionKey = device.connectionKey
+                handyManager.deviceType = device.type == .handy ? "The Handy" : "Oh."
+            case .intiface:
+                buttplugManager.serverAddress = device.serverAddress
+            case .internal:
+                device.isConnected = hapticManager.isSupported
+            }
         }
     }
 
