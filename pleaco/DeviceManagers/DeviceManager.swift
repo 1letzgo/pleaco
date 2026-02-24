@@ -65,7 +65,7 @@ enum DeviceWavePreset: String, CaseIterable, Identifiable, Codable {
     var shortName: String { rawValue }
 }
 
-class SavedDevice: ObservableObject, Identifiable, Codable {
+class SavedDevice: ObservableObject, Identifiable, Codable, Hashable {
     let id: UUID
     @Published var name: String
     @Published var type: DeviceType
@@ -76,6 +76,14 @@ class SavedDevice: ObservableObject, Identifiable, Codable {
 
     enum CodingKeys: String, CodingKey {
         case id, name, type, connectionKey, serverAddress
+    }
+    
+    static func == (lhs: SavedDevice, rhs: SavedDevice) -> Bool {
+        lhs.id == rhs.id
+    }
+    
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
     }
 
     init(id: UUID = UUID(), name: String, type: DeviceType, connectionKey: String = "", serverAddress: String = "ws://127.0.0.1:12345") {
@@ -752,12 +760,10 @@ class DeviceManager: ObservableObject {
         self.defaultIntensity = savedIntensity > 0 ? savedIntensity : 50
         self.currentLevel = self.defaultIntensity
 
-        // Then restore active device if exists - but DON'T connect yet
-        guard let idString = UserDefaults.standard.string(forKey: "activeDeviceId"),
-              let uuid = UUID(uuidString: idString) else { return }
-              
-        if let device = devices.first(where: { $0.id == uuid }) {
-            // Just set the device ID without connecting - connection will be checked lazily
+        // Restore saved device or default to internal haptics
+        if let idString = UserDefaults.standard.string(forKey: "activeDeviceId"),
+           let uuid = UUID(uuidString: idString),
+           let device = devices.first(where: { $0.id == uuid }) {
             activeDeviceId = device.id
             switch device.type {
             case .handy, .oh:
@@ -768,6 +774,10 @@ class DeviceManager: ObservableObject {
             case .internal:
                 device.isConnected = hapticManager.isSupported
             }
+        } else {
+            // Default to internal haptics
+            activeDeviceId = internalDevice.id
+            internalDevice.isConnected = hapticManager.isSupported
         }
     }
 

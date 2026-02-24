@@ -10,119 +10,139 @@ struct PlayerView: View {
     @Environment(\.dismiss) var dismiss
     
     var body: some View {
-        VStack(spacing: 30) {
-            // Header
-            HStack {
-                Spacer()
-                Button(action: { dismiss() }) {
-                    Image(systemName: "chevron.down.circle.fill")
-                        .font(.system(size: 30))
-                        .foregroundColor(.secondary)
-                }
-                .padding()
-            }
-            
-            // Artwork / Waveform area
-            ZStack {
-                RoundedRectangle(cornerRadius: 30)
-                    .fill(Color.appCardBackground)
-                    .shadow(radius: 10)
-                
-                VStack {
-                    MiniWaveformPreview()
-                        .frame(height: 150)
-                        .padding()
-                }
-            }
-            .frame(width: 300, height: 300)
-            
-            // Info
-            VStack(spacing: 8) {
-                Text(deviceManager.currentPatternName)
-                    .font(.title2)
-                    .fontWeight(.bold)
-                
-                Text(deviceManager.activeDevice?.name ?? "No Device Connected")
-                    .font(.headline)
-                    .foregroundColor(Color.appMagenta)
-            }
-            
-            // Controls
-            HStack(spacing: 40) {
-                Button(action: {
-                    deviceManager.selectPreviousPattern()
-                }) {
-                    Image(systemName: "backward.fill")
-                        .font(.system(size: 30))
-                }
-                .foregroundColor(.primary)
-                
-                Button(action: {
-                    if deviceManager.isPlaying {
-                        deviceManager.stop()
-                    } else {
-                        deviceManager.start()
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(spacing: 24) {
+                    // Artwork / Waveform area - Apple Music Style
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(Color.appContrast.opacity(0.05))
+                            .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
+                        
+                        VStack {
+                            MiniWaveformPreview()
+                                .frame(height: 180)
+                                .padding()
+                        }
                     }
-                }) {
-                    Image(systemName: deviceManager.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                        .font(.system(size: 70))
-                        .foregroundColor(Color.appMagenta)
-                }
-                
-                Button(action: {
-                    deviceManager.selectNextPattern()
-                }) {
-                    Image(systemName: "forward.fill")
-                        .font(.system(size: 30))
-                }
-                .foregroundColor(.primary)
-            }
-            
-            // Intensity Slider
-            VStack {
-                HStack {
-                    Image(systemName: "minus")
-                    Slider(value: $deviceManager.currentLevel, in: 0...100) { editing in
-                        if !editing { deviceManager.setLevel(deviceManager.currentLevel) }
-                    }
-                    .tint(Color.appMagenta)
-                    Image(systemName: "plus")
-                }
-                .foregroundColor(.secondary)
-            }
-            .padding(.horizontal, 30)
-            
-            // Stroke Range (Handy Only)
-            if deviceManager.activeDevice?.type == .handy {
-                VStack(spacing: 8) {
-                    HStack {
-                        Text("STROKE RANGE")
-                            .font(.system(size: 10, weight: .black))
+                    .frame(width: geometry.size.width - 64, height: geometry.size.width - 64)
+                    .padding(.top, 20)
+                    
+                    // Info
+                    VStack(spacing: 4) {
+                        Text(deviceManager.currentPatternName)
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .lineLimit(1)
+                        
+                        Text(deviceManager.activeDevice?.name ?? "No Device Connected")
+                            .font(.subheadline)
                             .foregroundColor(.secondary)
-                        Spacer()
-                        Text("\(Int(deviceManager.strokeMin))% - \(Int(deviceManager.strokeMax))%")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundColor(.primary)
+                    }
+                    .padding(.horizontal)
+                    
+                    // Progress Bar (Visual only - shows current intensity)
+                    // Intensity Slider
+                    VStack(spacing: 4) {
+                        Slider(value: $deviceManager.currentLevel, in: 0...100) { editing in
+                            if !editing { deviceManager.setLevel(deviceManager.currentLevel) }
+                        }
+                        .tint(Color.accentColor)
+                        
+                        Text("\(Int(deviceManager.currentLevel))%")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                             .monospacedDigit()
                     }
-                    .padding(.top, 4)
-
-                    RangeSlider(
-                        lowerValue: $deviceManager.strokeMin,
-                        upperValue: $deviceManager.strokeMax,
-                        range: 0...100,
-                        onEditingChanged: { editing in
-                            if !editing {
-                                deviceManager.setStrokeRange(min: deviceManager.strokeMin, max: deviceManager.strokeMax)
+                    .padding(.horizontal, 32)
+                    
+                    // Controls - Apple Music Style
+                    HStack(spacing: 48) {
+                        Button(action: {
+                            deviceManager.selectPreviousPattern()
+                        }) {
+                            Image(systemName: "backward.fill")
+                                .font(.system(size: 32, weight: .medium))
+                        }
+                        .foregroundColor(.primary)
+                        
+                        Button(action: {
+                            if deviceManager.isPlaying {
+                                deviceManager.stop()
+                            } else {
+                                deviceManager.start()
+                            }
+                        }) {
+                            ZStack {
+                                Circle()
+                                    .fill(Color.accentColor)
+                                    .frame(width: 72, height: 72)
+                                
+                                Image(systemName: deviceManager.isPlaying ? "pause.fill" : "play.fill")
+                                    .font(.system(size: 30, weight: .bold))
+                                    .foregroundColor(.white)
                             }
                         }
-                    )
-                    .frame(height: 24)
+                        
+                        Button(action: {
+                            deviceManager.selectNextPattern()
+                        }) {
+                            Image(systemName: "forward.fill")
+                                .font(.system(size: 32, weight: .medium))
+                        }
+                        .foregroundColor(.primary)
+                    }
+                    .padding(.vertical, 8)
+                    
+                    // Device Status
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(deviceManager.activeDevice?.isConnected == true ? Color.green : Color.gray)
+                            .frame(width: 8, height: 8)
+                        
+                        Text(deviceManager.activeDevice?.isConnected == true ? "Connected" : "Disconnected")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.top, 8)
+                    
+                    // Stroke Range (The Handy only)
+                    if deviceManager.activeDevice?.type == .handy {
+                        VStack(spacing: 12) {
+                            HStack {
+                                Label("Stroke Range", systemImage: "arrow.left.and.right")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                Spacer()
+                                Text("\(Int(deviceManager.strokeMin))% - \(Int(deviceManager.strokeMax))%")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                    .monospacedDigit()
+                            }
+                            .padding(.horizontal, 32)
+                            
+                            RangeSlider(
+                                lowerValue: $deviceManager.strokeMin,
+                                upperValue: $deviceManager.strokeMax,
+                                range: 0...100,
+                                onEditingChanged: { editing in
+                                    if !editing {
+                                        deviceManager.setStrokeRange(min: deviceManager.strokeMin, max: deviceManager.strokeMax)
+                                    }
+                                }
+                            )
+                            .frame(height: 32)
+                            .padding(.horizontal, 24)
+                        }
+                        .padding(.vertical, 16)
+                        .background(Color.appContrast.opacity(0.05))
+                        .cornerRadius(12)
+                        .padding(.horizontal, 24)
+                    }
+                    
+                    Spacer(minLength: 40)
                 }
-                .padding(.horizontal, 30)
             }
-            
-            Spacer()
         }
         .background(Color.appBackground)
     }

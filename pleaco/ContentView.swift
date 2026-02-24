@@ -31,21 +31,16 @@ struct ContentView: View {
                     MiniPlayerBar(showPlayer: $showPlayer)
                 }
                 .tabItem {
-                    Label("Geräte", systemImage: "wave.3.forward")
+                    Label("Settings", systemImage: "gearshape.fill")
                 }
                 .tag(AppTab.devices)
         }
-        .tint(Color.appMagenta)
-        .ignoresSafeArea(.keyboard)
+        .tint(Color.accentColor)
         .sheet(isPresented: $showPlayer) {
             PlayerView()
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
         }
     }
 }
-
-// MARK: - Mini Player Bar
 
 struct MiniPlayerBar: View {
     @Binding var showPlayer: Bool
@@ -55,16 +50,17 @@ struct MiniPlayerBar: View {
         Button { showPlayer = true } label: {
             HStack(spacing: 14) {
                 MiniWaveformPreview()
-                    .frame(width: 46, height: 46)
-                    .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                    .frame(width: 44, height: 44)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(deviceManager.currentPatternName)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(.primary)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
                         .lineLimit(1)
-                    Text(deviceManager.activeDevice?.name ?? "Kein Gerät")
-                        .font(.system(size: 13))
+                    
+                    Text(deviceManager.activeDevice?.name ?? "No Device")
+                        .font(.caption)
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                 }
@@ -76,9 +72,11 @@ struct MiniPlayerBar: View {
                     else { deviceManager.start() }
                 } label: {
                     Image(systemName: deviceManager.isPlaying ? "stop.fill" : "play.fill")
-                        .font(.system(size: 22))
-                        .foregroundColor(Color.appMagenta)
-                        .frame(width: 44, height: 44)
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 36, height: 36)
+                        .background(Color.accentColor)
+                        .clipShape(Circle())
                 }
                 .buttonStyle(.plain)
                 .opacity(deviceManager.activeDevice?.isConnected == true ? 1 : 0.4)
@@ -87,27 +85,17 @@ struct MiniPlayerBar: View {
             .padding(.vertical, 10)
         }
         .buttonStyle(.plain)
-        .background(.ultraThinMaterial)
+        .background(Color.appBackground)
         .overlay(alignment: .top) {
-            VStack(spacing: 0) {
-                // Separator
-                Rectangle()
-                    .fill(Color(.separator))
-                    .frame(height: 0.5)
-                // Intensity progress line
-                GeometryReader { geo in
-                    Color.appMagenta
-                        .opacity(deviceManager.isPlaying ? 0.6 : 0.25)
-                        .frame(width: geo.size.width * CGFloat(deviceManager.currentLevel / 100.0))
-                        .animation(.linear(duration: 0.1), value: deviceManager.currentLevel)
-                }
-                .frame(height: 2)
+            GeometryReader { geo in
+                Color.accentColor
+                    .opacity(deviceManager.isPlaying ? 0.8 : 0.3)
+                    .frame(width: geo.size.width * CGFloat(deviceManager.currentLevel / 100.0), height: 3)
             }
+            .frame(height: 3)
         }
     }
 }
-
-// MARK: - Mini Waveform Preview
 
 struct MiniWaveformPreview: View {
     @ObservedObject var deviceManager = DeviceManager.shared
@@ -115,33 +103,22 @@ struct MiniWaveformPreview: View {
     private var curvePoints: [Double] {
         if deviceManager.isAudioReactive || deviceManager.isManual { return [] }
         if let script = deviceManager.activeFunScript {
-            return PatternEngine.sampleFunScriptCurve(script, pointCount: 40)
+            return PatternEngine.sampleFunScriptCurve(script, pointCount: 30)
         }
         return PatternEngine.cachedCurves[deviceManager.selectedPreset] ?? []
     }
 
     var body: some View {
         ZStack {
-            Color(.systemGray5)
+            Color(uiColor: .tertiarySystemFill)
 
             if !curvePoints.isEmpty {
                 Canvas { context, size in
                     guard curvePoints.count > 1 else { return }
                     let w = size.width, h = size.height
                     let count = curvePoints.count
-                    let inset: CGFloat = 5
+                    let inset: CGFloat = 4
                     let dh = h - inset * 2
-
-                    var fill = Path()
-                    fill.move(to: CGPoint(x: 0, y: inset + dh))
-                    for (i, val) in curvePoints.enumerated() {
-                        let x = CGFloat(i) / CGFloat(count - 1) * w
-                        let y = inset + dh - CGFloat(val) * dh
-                        fill.addLine(to: CGPoint(x: x, y: y))
-                    }
-                    fill.addLine(to: CGPoint(x: w, y: inset + dh))
-                    fill.closeSubpath()
-                    context.fill(fill, with: .color(Color.appMagenta.opacity(0.3)))
 
                     var line = Path()
                     for (i, val) in curvePoints.enumerated() {
@@ -150,16 +127,16 @@ struct MiniWaveformPreview: View {
                         if i == 0 { line.move(to: CGPoint(x: x, y: y)) }
                         else { line.addLine(to: CGPoint(x: x, y: y)) }
                     }
-                    context.stroke(line, with: .color(Color.appMagenta), lineWidth: 1.5)
+                    context.stroke(line, with: .color(Color.accentColor), lineWidth: 1.5)
                 }
             } else if deviceManager.isAudioReactive {
                 Image(systemName: "mic.fill")
                     .font(.system(size: 16))
-                    .foregroundColor(Color.appMagenta.opacity(0.6))
+                    .foregroundColor(Color.accentColor)
             } else {
                 Image(systemName: "hand.tap.fill")
                     .font(.system(size: 16))
-                    .foregroundColor(Color.appMagenta.opacity(0.6))
+                    .foregroundColor(Color.accentColor)
             }
         }
     }
