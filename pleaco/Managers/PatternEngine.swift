@@ -69,7 +69,12 @@ class PatternEngine {
             let base = (sin(time * .pi * 12.0) + 1.0) / 2.0
             let rumble = (sin(time * .pi * 106.0) + 1.0) / 2.0 * 0.2
             return min(1.0, base * 0.8 + rumble)
-        case .build1:     return (sin(time * .pi * 6.0) + 1.0) / 2.0
+        case .build1:
+            // Throb: sharp attack → brief hold → gradual decay, 1s cycle
+            let cycle = time.truncatingRemainder(dividingBy: 1.0) / 1.0
+            if cycle < 0.15 { return cycle / 0.15 }
+            if cycle < 0.28 { return 1.0 }
+            return max(0, 1.0 - (cycle - 0.28) / 0.72)
         case .build2:
             let cycle = time.truncatingRemainder(dividingBy: 0.19) / 0.19
             return cycle < 0.5 ? 1.0 : 0.4
@@ -82,10 +87,13 @@ class PatternEngine {
         case .climax2:    return Int(time * 10) % 2 == 0 ? 1.0 : 0.7
         case .aftercare:  return 0.2 + 0.1 * sin(time * 2.0)
         case .pulse:      return Int(time / 0.5) % 2 == 0 ? 1.0 : 0.0
-        case .wave:       return (sin(time * 6.0) + 1.0) / 2.0
+        case .wave:       return (sin(time * .pi * 4.0) + 1.0) / 2.0  // 2Hz
         case .fastPulse:  return Int(time / 0.2) % 2 == 0 ? 1.0 : 0.0
         case .slowWave:   return (sin(time * 3.0) + 1.0) / 2.0
-        case .ramp:       return time.truncatingRemainder(dividingBy: 5.0) / 5.0
+        case .ramp:
+            // Triangle wave: 4s ramp up, 4s ramp down — no hard reset
+            let rampCycle = time.truncatingRemainder(dividingBy: 8.0)
+            return rampCycle < 4.0 ? rampCycle / 4.0 : 1.0 - ((rampCycle - 4.0) / 4.0)
         case .heartbeat:
             let cycle = time.truncatingRemainder(dividingBy: 1.2)
             if cycle < 0.15 { return 1.0 }

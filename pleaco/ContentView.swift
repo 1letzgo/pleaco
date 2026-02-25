@@ -35,9 +35,11 @@ struct ContentView: View {
                 }
                 .tag(AppTab.devices)
         }
-        .tint(Color.accentColor)
+        .tint(Color.appAccent)
         .sheet(isPresented: $showPlayer) {
             PlayerView()
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.thinMaterial)
         }
     }
 }
@@ -47,50 +49,105 @@ struct MiniPlayerBar: View {
     @ObservedObject var deviceManager = DeviceManager.shared
 
     var body: some View {
-        Button { showPlayer = true } label: {
-            HStack(spacing: 14) {
-                MiniWaveformPreview()
-                    .frame(width: 44, height: 44)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+        HStack(spacing: 14) {
+            MiniWaveformPreview()
+                .frame(width: 48, height: 48)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .strokeBorder(Color.subtleBorder, lineWidth: 0.5)
+                )
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(deviceManager.currentPatternName)
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .lineLimit(1)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(deviceManager.currentPatternName)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .lineLimit(1)
+
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(deviceManager.activeDevice?.isConnected == true ? Color.green : Color.gray)
+                        .frame(width: 6, height: 6)
                     
                     Text(deviceManager.activeDevice?.name ?? "No Device")
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                 }
+            }
 
-                Spacer()
+            Spacer()
+
+            HStack(spacing: 12) {
+                Button {
+                    deviceManager.selectPreviousPattern()
+                } label: {
+                    Image(systemName: "backward.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.primary)
+                }
+                .buttonStyle(.plain)
 
                 Button {
                     if deviceManager.isPlaying { deviceManager.stop() }
                     else { deviceManager.start() }
                 } label: {
-                    Image(systemName: deviceManager.isPlaying ? "stop.fill" : "play.fill")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundColor(.white)
-                        .frame(width: 36, height: 36)
-                        .background(Color.accentColor)
-                        .clipShape(Circle())
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.appAccent, Color.appAccent.opacity(0.8)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 40, height: 40)
+                            .shadow(color: Color.glowAccent, radius: 8, x: 0, y: 4)
+                        
+                        Image(systemName: deviceManager.isPlaying ? "pause.fill" : "play.fill")
+                            .contentTransition(.symbolEffect(.replace))
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(.white)
+                    }
                 }
                 .buttonStyle(.plain)
                 .opacity(deviceManager.activeDevice?.isConnected == true ? 1 : 0.4)
+
+                Button {
+                    deviceManager.selectNextPattern()
+                } label: {
+                    Image(systemName: "forward.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.primary)
+                }
+                .buttonStyle(.plain)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
         }
-        .buttonStyle(.plain)
-        .background(Color.appBackground)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
+        .onTapGesture { showPlayer = true }
+        .background(.ultraThinMaterial)
         .overlay(alignment: .top) {
-            GeometryReader { geo in
-                Color.accentColor
-                    .opacity(deviceManager.isPlaying ? 0.8 : 0.3)
-                    .frame(width: geo.size.width * CGFloat(deviceManager.currentLevel / 100.0), height: 3)
+            GeometryReader { geometry in
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.appAccent.opacity(deviceManager.isPlaying ? 0.9 : 0.3),
+                                Color.appAccent.opacity(deviceManager.isPlaying ? 0.6 : 0.2)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(
+                        width: max(4, geometry.size.width * CGFloat(deviceManager.currentLevel / 100.0)),
+                        height: 3,
+                        alignment: .leading
+                    )
+                    .animation(.linear(duration: 0.1), value: deviceManager.currentLevel)
+                    .animation(.easeInOut(duration: 0.35), value: deviceManager.isPlaying)
             }
             .frame(height: 3)
         }
@@ -110,14 +167,14 @@ struct MiniWaveformPreview: View {
 
     var body: some View {
         ZStack {
-            Color(uiColor: .tertiarySystemFill)
-
+            Color.surfaceSecondary
+            
             if !curvePoints.isEmpty {
                 Canvas { context, size in
                     guard curvePoints.count > 1 else { return }
                     let w = size.width, h = size.height
                     let count = curvePoints.count
-                    let inset: CGFloat = 4
+                    let inset: CGFloat = 6
                     let dh = h - inset * 2
 
                     var line = Path()
@@ -127,16 +184,30 @@ struct MiniWaveformPreview: View {
                         if i == 0 { line.move(to: CGPoint(x: x, y: y)) }
                         else { line.addLine(to: CGPoint(x: x, y: y)) }
                     }
-                    context.stroke(line, with: .color(Color.accentColor), lineWidth: 1.5)
+                    context.stroke(line, with: .color(Color.appAccent), lineWidth: 2)
                 }
             } else if deviceManager.isAudioReactive {
-                Image(systemName: "mic.fill")
-                    .font(.system(size: 16))
-                    .foregroundColor(Color.accentColor)
+                HStack(spacing: 3) {
+                    ForEach(0..<7, id: \.self) { i in
+                        let norm = Double(i) / 6.0
+                        let envelope = sin(norm * .pi)
+                        let barH = max(4.0, 4.0 + (deviceManager.audioLevel / 100.0) * envelope * 20.0)
+                        Capsule()
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.appAccent, Color.appAccent.opacity(0.6)],
+                                    startPoint: .bottom,
+                                    endPoint: .top
+                                )
+                            )
+                            .frame(width: 3, height: CGFloat(barH))
+                            .animation(.easeOut(duration: 0.08), value: deviceManager.audioLevel)
+                    }
+                }
             } else {
-                Image(systemName: "hand.tap.fill")
-                    .font(.system(size: 16))
-                    .foregroundColor(Color.accentColor)
+                Image(systemName: deviceManager.isManual ? "hand.tap.fill" : "waveform")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundColor(Color.appAccent.opacity(0.7))
             }
         }
     }

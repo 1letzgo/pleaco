@@ -31,19 +31,33 @@ struct FunScriptData: Codable {
         let at: Int // time in ms
         let pos: Int // position 0-100
     }
-    
+
     let actions: [Action]
     let inverted: Bool
     let range: Int
-    
+
     var durationMs: Int {
         actions.last?.at ?? 0
     }
-    
+
+    // Memberwise init for manual construction
     init(actions: [Action] = [], inverted: Bool = false, range: Int = 100) {
         self.actions = actions
         self.inverted = inverted
         self.range = range
+    }
+
+    // Custom decoding: `inverted` and `range` are optional in many real-world
+    // .funscript files — default to false / 100 when absent.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        actions  = try container.decode([Action].self, forKey: .actions)
+        inverted = (try? container.decodeIfPresent(Bool.self, forKey: .inverted)) ?? false
+        range    = (try? container.decodeIfPresent(Int.self,  forKey: .range))    ?? 100
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case actions, inverted, range
     }
 }
 

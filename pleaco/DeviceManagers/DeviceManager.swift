@@ -32,20 +32,20 @@ enum DeviceType: String, CaseIterable, Identifiable, Codable {
 enum DeviceWavePreset: String, CaseIterable, Identifiable, Codable {
     case audioReactive = "Mikrofon"
     case manual = "Touchpad"
-    case sine75 = "Sine 75Hz"
+    case sine75 = "Steady"          // was "Sine 75Hz" — constant intensity baseline
     case foreplay = "Foreplay"
     case texture = "Texture"
-    case build1 = "Build 1 (Slow Pulse)"
-    case build2 = "Build 2 (Flutter)"
-    case build3 = "Build 3 (Warming)"
-    case climax1 = "Climax 1"
-    case climax2 = "Climax 2"
+    case build1 = "Throb"           // was "Build 1 (Slow Pulse)" — fixed waveform
+    case build2 = "Flutter"         // was "Build 2 (Flutter)"
+    case build3 = "Warming"         // was "Build 3 (Warming)"
+    case climax1 = "Peak"           // was "Climax 1"
+    case climax2 = "Edge"           // was "Climax 2"
     case aftercare = "Aftercare"
     case pulse = "Pulse"
-    case fastPulse = "Fast Pulse"
-    case wave = "Wave"
+    case fastPulse = "Rapid"        // was "Fast Pulse"
+    case wave = "Wave"              // fixed: now 2Hz, distinct from Foreplay
     case slowWave = "Slow Wave"
-    case ramp = "Ramp"
+    case ramp = "Ramp"              // fixed: triangle, no hard reset
     case heartbeat = "Heartbeat"
     case chaos = "Chaos"
     case tease = "Tease"
@@ -635,15 +635,15 @@ class DeviceManager: ObservableObject {
         case .sine75:     return 0.1
         case .foreplay:   return 0.05
         case .texture:    return 0.05
-        case .build1:     return 0.1
+        case .build1:     return 0.02   // Throb — smooth 1s cycle needs fine sampling
         case .build2:     return 0.02
         case .build3:     return 0.08
         case .climax1:    return 0.05
         case .climax2:    return 0.05
         case .aftercare:  return 0.15
-        case .pulse:      return 0.5
-        case .wave:       return 0.15
-        case .fastPulse:  return 0.2
+        case .pulse:      return 0.05   // re-evaluate each tick; waveform is time-based
+        case .wave:       return 0.05   // Wave is now 2Hz — needs faster sampling
+        case .fastPulse:  return 0.05
         case .slowWave:   return 0.3
         case .ramp:       return 0.1
         case .heartbeat:  return 0.15
@@ -677,8 +677,11 @@ class DeviceManager: ObservableObject {
             let rumble = (sin(time * .pi * 106.0) + 1.0) / 2.0 * 0.2
             return min(1.0, base * 0.8 + rumble)
         case .build1:
-            // Breathing pulses (~3Hz)
-            return (sin(time * .pi * 6.0) + 1.0) / 2.0
+            // Throb: sharp attack → brief hold → gradual decay, 1s cycle
+            let cycle = time.truncatingRemainder(dividingBy: 1.0) / 1.0
+            if cycle < 0.15 { return cycle / 0.15 }
+            if cycle < 0.28 { return 1.0 }
+            return max(0, 1.0 - (cycle - 0.28) / 0.72)
         case .build2:
             // Fast flutter (0.19s duration)
             let cycle = time.truncatingRemainder(dividingBy: 0.19) / 0.19
@@ -698,13 +701,16 @@ class DeviceManager: ObservableObject {
         case .pulse:
             return Int(time / 0.5) % 2 == 0 ? 1.0 : 0.0
         case .wave:
-            return (sin(time * 6.0) + 1.0) / 2.0
+            // 2Hz — clearly distinct from Foreplay (1Hz) and Slow Wave (~0.5Hz)
+            return (sin(time * .pi * 4.0) + 1.0) / 2.0
         case .fastPulse:
             return Int(time / 0.2) % 2 == 0 ? 1.0 : 0.0
         case .slowWave:
             return (sin(time * 3.0) + 1.0) / 2.0
         case .ramp:
-            return time.truncatingRemainder(dividingBy: 5.0) / 5.0
+            // Triangle wave: 4s ramp up then 4s ramp down — no hard reset
+            let cycle = time.truncatingRemainder(dividingBy: 8.0)
+            return cycle < 4.0 ? cycle / 4.0 : 1.0 - ((cycle - 4.0) / 4.0)
         case .heartbeat:
             let cycle = time.truncatingRemainder(dividingBy: 1.2)
             if cycle < 0.15 { return 1.0 }
