@@ -15,6 +15,7 @@ enum DeviceType: String, CaseIterable, Identifiable, Codable {
     case handy = "The Handy"
     case oh = "Oh."
     case intiface = "Intiface"
+    case lovespouse = "LoveSpouse"
     case `internal` = "Phone Vibration"
 
     var id: String { rawValue }
@@ -24,14 +25,13 @@ enum DeviceType: String, CaseIterable, Identifiable, Codable {
         case .handy: return "hand.tap"
         case .oh: return "waveform"
         case .intiface: return "cable.connector"
+        case .lovespouse: return "antenna.radiowaves.left.and.right"
         case .internal: return "iphone.gen3"
         }
     }
 }
 
 enum DeviceWavePreset: String, CaseIterable, Identifiable, Codable {
-    case audioReactive = "Mikrofon"
-    case manual = "Touchpad"
     case sine75 = "Steady"          // was "Sine 75Hz" — constant intensity baseline
     case foreplay = "Foreplay"
     case texture = "Texture"
@@ -127,17 +127,7 @@ class DeviceManager: ObservableObject {
     @Published var strokeMax: Double = 100 {
         didSet { UserDefaults.standard.set(strokeMax, forKey: "strokeMax") }
     }
-    @Published var audioSensitivity: Double = 1.5
-    @Published var audioLevel: Double = 0
-    @Published var manualIntensity: Double = 0 {
-        didSet {
-            if isManual && isPlaying {
-                // Apply floor for continuous feedback while touching
-                let effectiveLevel = manualIntensity > 0 ? max(0.05, manualIntensity) : 0
-                sendLevel(effectiveLevel * currentLevel)
-            }
-        }
-    }
+
     
     @Published var defaultIntensity: Double = 50 {
         didSet {
@@ -148,13 +138,10 @@ class DeviceManager: ObservableObject {
         }
     }
     
-    var isAudioReactive: Bool { selectedPreset == .audioReactive }
-    var isManual: Bool { selectedPreset == .manual }
 
     private var handyManager = HandyManager.shared
     private var buttplugManager = ButtplugManager.shared
-    private var backgroundAudio = BackgroundAudioManager.shared
-    private var audioReactive = AudioReactiveManager.shared
+    private var loveSpouseManager = LoveSpouseManager.shared
     private var hapticManager = HapticManager.shared
 
     @Published var waveTime: Double = 0
@@ -162,9 +149,11 @@ class DeviceManager: ObservableObject {
     @Published var activeFunScriptId: UUID? = nil
     @Published var funScriptPositionMs: Double = 0
     @Published var customScripts: [NamedFunScript] = []
+    
+    /// Persistent selection for LoveSpouse (1-9), independent of isPlaying
+    @Published var selectedLoveSpouseProgram: Int = 1
 
     private var waveTimer: Timer?
-    private var audioSubscription: AnyCancellable?
     private var connectionSubscription: AnyCancellable?
 
     var activeDevice: SavedDevice? {
@@ -173,6 +162,17 @@ class DeviceManager: ObservableObject {
     }
 
     var currentPatternName: String {
+        if activeDevice?.type == .lovespouse {
+            let prog = selectedLoveSpouseProgram
+            if prog > 0 {
+                switch prog {
+                case 1: return "Leicht"
+                case 2: return "Mittel"
+                case 3: return "Stark"
+                default: return "Muster \(prog - 3)"
+                }
+            }
+        }
         if let id = activeFunScriptId, let script = customScripts.first(where: { $0.id == id }) {
             return script.name
         }
@@ -223,10 +223,9 @@ class DeviceManager: ObservableObject {
             switch device.type {
             case .handy, .oh:
                 handyManager.connectionKey = device.connectionKey
-                // Optionally re-check connection
             case .intiface:
                 buttplugManager.serverAddress = device.serverAddress
-            case .internal:
+            case .lovespouse, .internal:
                 break
             }
         }
@@ -262,6 +261,11 @@ class DeviceManager: ObservableObject {
     }
 
     func setActiveDevice(_ device: SavedDevice?, autoStart: Bool = false) {
+        // Disconnect old active device if it exists
+        if let currentActive = activeDevice {
+            disconnectDevice(currentActive)
+        }
+
         stop()
 
         activeDeviceId = device?.id
@@ -279,6 +283,8 @@ class DeviceManager: ObservableObject {
             handyManager.deviceType = "Oh."
         case .intiface:
             buttplugManager.serverAddress = device.serverAddress
+        case .lovespouse:
+            objectWillChange.send()
         case .internal:
             device.isConnected = hapticManager.isSupported
             if device.isConnected {
@@ -299,6 +305,22 @@ class DeviceManager: ObservableObject {
             }
         }
     }
+
+    private func disconnectDevice(_ device: SavedDevice) {
+        NSLog("🔔 DeviceManager: Disconnecting \(device.name) (\(device.type.rawValue))")
+        switch device.type {
+        case .handy, .oh:
+            handyManager.stopMotion()
+        case .intiface:
+            buttplugManager.disconnect()
+        case .lovespouse:
+            loveSpouseManager.stopAll()
+        case .internal:
+            break
+        }
+        device.isConnected = false
+        objectWillChange.send()
+    }
     
     private func checkDeviceConnectionAsync(_ device: SavedDevice) {
         switch device.type {
@@ -312,6 +334,13 @@ class DeviceManager: ObservableObject {
             }
         case .intiface:
             buttplugManager.connect { [weak self] success in
+                DispatchQueue.main.async {
+                    device.isConnected = success
+                    self?.objectWillChange.send()
+                }
+            }
+        case .lovespouse:
+            loveSpouseManager.checkConnection { [weak self] success in
                 DispatchQueue.main.async {
                     device.isConnected = success
                     self?.objectWillChange.send()
@@ -343,8 +372,6 @@ class DeviceManager: ObservableObject {
         }
         #endif
         
-        backgroundAudio.startBackgroundAudio()
-
         ensureHardwareStarted()
         startWaveTimer()
     }
@@ -357,6 +384,8 @@ class DeviceManager: ObservableObject {
             handyManager.startHamp()
         case .intiface:
             break
+        case .lovespouse:
+            loveSpouseManager.selectProgram(selectedLoveSpouseProgram)
         case .internal:
             hapticManager.start()
         }
@@ -364,10 +393,13 @@ class DeviceManager: ObservableObject {
 
     func stop() {
         stopWaveTimer()
-        stopAudioReactive()
         isPlaying = false
         waveTime = 0
         funScriptPositionMs = 0
+        
+        if activeDevice?.type == .lovespouse {
+            loveSpouseManager.stopAll()
+        }
         
         #if os(iOS)
         DispatchQueue.main.async {
@@ -375,19 +407,19 @@ class DeviceManager: ObservableObject {
         }
         #endif
         
-        backgroundAudio.stopBackgroundAudio()
         hapticManager.stop()
 
         handyManager.stopMotion()
         buttplugManager.stopAllDevices()
+        loveSpouseManager.stopAll()
         hapticManager.stop()
     }
 
     func setLevel(_ level: Double) {
         currentLevel = level
         
-        // Manual and audioReactive modes drive intensity via their own streams
-        if !isAudioReactive && !isManual {
+        // Intensity control via slider
+        if isPlaying {
             sendLevel(level)
         }
     }
@@ -408,37 +440,10 @@ class DeviceManager: ObservableObject {
     }
 
     func applyPreset(_ preset: DeviceWavePreset) {
+        selectedLoveSpouseProgram = 0 // Clear hardware program
         activeFunScript = nil
         activeFunScriptId = nil
-        let wasAudioReactive = selectedPreset == .audioReactive
         selectedPreset = preset
-
-        // Leaving audio-reactive mode
-        if wasAudioReactive && preset != .audioReactive {
-            stopAudioReactive()
-        }
-
-        // Handle Manual mode
-        if preset == .manual {
-            if !isPlaying {
-                start()
-            }
-            stopWaveTimer()
-            manualIntensity = 0
-            startRealtimeSubscription()
-            return
-        }
-
-        // Entering audio-reactive mode
-        if preset == .audioReactive {
-            if !isPlaying {
-                start()
-            }
-            stopWaveTimer()
-            audioReactive.startCapture()
-            startRealtimeSubscription()
-            return
-        }
 
         if !isPlaying {
             start()
@@ -450,39 +455,11 @@ class DeviceManager: ObservableObject {
         startWaveTimer()
     }
 
-    // MARK: - Audio Reactive Mode
-
-    private func startRealtimeSubscription() {
-        // Cancel existing if any
-        audioSubscription?.cancel()
-        
-        // Subscription for Manual and Audio-reactive modes
-        audioSubscription = Publishers.CombineLatest(audioReactive.$normalizedLevel, $manualIntensity)
-            .receive(on: RunLoop.main)
-            .sink { [weak self] audioNorm, manualNorm in
-                guard let self = self, self.isPlaying else { return }
-                
-                if self.isAudioReactive {
-                    let level = audioNorm * 100 * self.audioSensitivity
-                    self.audioLevel = min(100, max(0, level))
-                    self.sendLevel(self.audioLevel)
-                } else if self.isManual {
-                    let level = manualNorm * 100
-                    self.sendLevel(min(100, max(0, level)))
-                }
-            }
-    }
-
-    private func stopAudioReactive() {
-        audioSubscription?.cancel()
-        audioSubscription = nil
-        audioReactive.stopCapture()
-        audioLevel = 0
-    }
 
     // MARK: - FunScript
 
     func applyFunScript(_ script: FunScriptData) {
+        selectedLoveSpouseProgram = 0 // Clear hardware program
         activeFunScript = FunScriptData(
             actions: script.actions.sorted { $0.at < $1.at },
             inverted: script.inverted,
@@ -497,6 +474,7 @@ class DeviceManager: ObservableObject {
     }
 
     func applyNamedFunScript(_ namedScript: NamedFunScript) {
+        selectedLoveSpouseProgram = 0 // Clear hardware program
         activeFunScript = namedScript.data
         activeFunScriptId = namedScript.id
         funScriptPositionMs = 0
@@ -530,24 +508,137 @@ class DeviceManager: ObservableObject {
 
     // MARK: - Pattern Navigation
 
+    func selectLoveSpouseProgram(_ index: Int) {
+        guard activeDevice?.type == .lovespouse else { return }
+        
+        // Reset software patterns
+        selectedPreset = .sine75 // Neutral state for software
+        activeFunScript = nil
+        activeFunScriptId = nil
+        
+        selectedLoveSpouseProgram = index
+        
+        if index > 0 {
+            isPlaying = true
+            loveSpouseManager.selectProgram(index)
+            #if os(iOS)
+            DispatchQueue.main.async {
+                UIApplication.shared.isIdleTimerDisabled = true
+            }
+            #endif
+        } else {
+            stop()
+        }
+        objectWillChange.send()
+    }
+
     func selectNextPattern() {
         let presets = PatternEngine.navigablePresets
-        guard !presets.isEmpty else { return }
-        if let idx = presets.firstIndex(of: selectedPreset) {
-            applyPreset(presets[(idx + 1) % presets.count])
-        } else {
-            applyPreset(presets[0])
+        let isLS = activeDevice?.type == .lovespouse
+        
+        // 1. Current state: LoveSpouse Program
+        if isLS && selectedLoveSpouseProgram > 0 {
+            if selectedLoveSpouseProgram < 9 {
+                selectLoveSpouseProgram(selectedLoveSpouseProgram + 1)
+            } else {
+                // End of LS Programs -> Move to first Software Preset
+                selectedLoveSpouseProgram = 0
+                applyPreset(presets.first ?? .sine75)
+            }
+            return
         }
+        
+        // 2. Current state: Software Preset
+        if activeFunScriptId == nil {
+            if let idx = presets.firstIndex(of: selectedPreset) {
+                if idx < presets.count - 1 {
+                    applyPreset(presets[idx + 1])
+                } else if !customScripts.isEmpty {
+                    // End of Presets -> Move to first Custom Script
+                    applyNamedFunScript(customScripts[0])
+                } else if isLS {
+                    // End of Presets (no scripts) -> Back to LS Program 1
+                    selectLoveSpouseProgram(1)
+                } else {
+                    // Loop back to first Preset
+                    applyPreset(presets[0])
+                }
+                return
+            }
+        }
+        
+        // 3. Current state: Custom Script
+        if let currentId = activeFunScriptId, let idx = customScripts.firstIndex(where: { $0.id == currentId }) {
+            if idx < customScripts.count - 1 {
+                applyNamedFunScript(customScripts[idx + 1])
+            } else if isLS {
+                // End of Scripts -> Loop back to LS Program 1
+                selectLoveSpouseProgram(1)
+            } else {
+                // End of Scripts -> Loop back to first Software Preset
+                applyPreset(presets[0])
+            }
+            return
+        }
+        
+        // Fallback
+        if isLS { selectLoveSpouseProgram(1) }
+        else { applyPreset(presets.first ?? .sine75) }
     }
 
     func selectPreviousPattern() {
         let presets = PatternEngine.navigablePresets
-        guard !presets.isEmpty else { return }
-        if let idx = presets.firstIndex(of: selectedPreset) {
-            applyPreset(presets[(idx - 1 + presets.count) % presets.count])
-        } else {
-            applyPreset(presets[0])
+        let isLS = activeDevice?.type == .lovespouse
+        
+        // 1. Current state: LoveSpouse Program
+        if isLS && selectedLoveSpouseProgram > 0 {
+            if selectedLoveSpouseProgram > 1 {
+                selectLoveSpouseProgram(selectedLoveSpouseProgram - 1)
+            } else if !customScripts.isEmpty {
+                // Start of LS Programs -> Move to last Custom Script
+                selectedLoveSpouseProgram = 0
+                applyNamedFunScript(customScripts.last!)
+            } else {
+                // Start of LS Programs (no scripts) -> Move to last Software Preset
+                selectedLoveSpouseProgram = 0
+                applyPreset(presets.last ?? .sine75)
+            }
+            return
         }
+        
+        // 2. Current state: Software Preset
+        if activeFunScriptId == nil {
+            if let idx = presets.firstIndex(of: selectedPreset) {
+                if idx > 0 {
+                    applyPreset(presets[idx - 1])
+                } else if isLS {
+                    // Start of Presets -> Back to LS Program 9
+                    selectLoveSpouseProgram(9)
+                } else if !customScripts.isEmpty {
+                    // Start of Presets -> Back to last Custom Script
+                    applyNamedFunScript(customScripts.last!)
+                } else {
+                    // Loop back to last Preset
+                    applyPreset(presets.last ?? .sine75)
+                }
+                return
+            }
+        }
+        
+        // 3. Current state: Custom Script
+        if let currentId = activeFunScriptId, let idx = customScripts.firstIndex(where: { $0.id == currentId }) {
+            if idx > 0 {
+                applyNamedFunScript(customScripts[idx - 1])
+            } else {
+                // Start of Scripts -> Back to last Software Preset
+                applyPreset(presets.last ?? .sine75)
+            }
+            return
+        }
+        
+        // Fallback
+        if isLS { selectLoveSpouseProgram(9) }
+        else { applyPreset(presets.last ?? .sine75) }
     }
 
     // MARK: - Wave Pattern Engine
@@ -624,6 +715,8 @@ class DeviceManager: ObservableObject {
             handyManager.setHampVelocity(speed: level)
         case .intiface:
             buttplugManager.setLevel(level)
+        case .lovespouse:
+            loveSpouseManager.setLevel(level)
         case .internal:
             hapticManager.updateIntensity(level)
         }
@@ -631,7 +724,6 @@ class DeviceManager: ObservableObject {
 
     private func timerInterval(for preset: DeviceWavePreset) -> TimeInterval {
         switch preset {
-        case .audioReactive, .manual: return 0.05
         case .sine75:     return 0.1
         case .foreplay:   return 0.05
         case .texture:    return 0.05
@@ -662,10 +754,6 @@ class DeviceManager: ObservableObject {
 
     private func calculateWaveValue(time: Double) -> Double {
         switch selectedPreset {
-        case .audioReactive:
-            return audioReactive.normalizedLevel
-        case .manual:
-            return manualIntensity
         case .sine75:
             return 1.0
         case .foreplay:
@@ -777,6 +865,8 @@ class DeviceManager: ObservableObject {
                 handyManager.deviceType = device.type == .handy ? "The Handy" : "Oh."
             case .intiface:
                 buttplugManager.serverAddress = device.serverAddress
+            case .lovespouse:
+                device.isConnected = loveSpouseManager.isConnected
             case .internal:
                 device.isConnected = hapticManager.isSupported
             }

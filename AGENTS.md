@@ -76,6 +76,16 @@ xcodebuild -project pleaco.xcodeproj -scheme pleaco test -only-testing:MyTestCla
 
 No SwiftLint configuration exists. Standard Xcode warnings are enabled.
 
+### Formatting
+
+Use Xcode's built-in formatting (Cmd+I) or SwiftFormat if added to the project.
+
+---
+
+### Linting
+
+No SwiftLint configuration exists. Standard Xcode warnings are enabled.
+
 ---
 
 ## Code Style Guidelines

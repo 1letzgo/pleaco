@@ -13,59 +13,82 @@ struct PlayerView: View {
         ScrollView {
             VStack(spacing: 32) {
                 artworkSection
-                
+
                 infoSection
-                
-                intensitySection
-                
+
+                if deviceManager.activeDevice?.type != .lovespouse {
+                    intensitySection
+                }
+
                 transportControls
-                
+
                 deviceStatusSection
-                
+
                 strokeRangeSection
-                
+
                 Spacer(minLength: 40)
             }
         }
         .scrollClipDisabled()
         .background(Color.surfacePrimary)
     }
-    
+
+    // MARK: – Artwork
+
     private var artworkSection: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 24)
+            // Warm card background
+            RoundedRectangle(cornerRadius: 28)
                 .fill(Color.cardBackground)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 24)
+                    RoundedRectangle(cornerRadius: 28)
                         .strokeBorder(Color.subtleBorder, lineWidth: 0.5)
                 )
-            
+
+            // Soft bloom vignette when playing
+            if deviceManager.isPlaying {
+                RoundedRectangle(cornerRadius: 28)
+                    .fill(
+                        RadialGradient(
+                            colors: [Color.appAccent.opacity(0.12), .clear],
+                            center: .center,
+                            startRadius: 20,
+                            endRadius: 160
+                        )
+                    )
+                    .animation(.easeInOut(duration: 1.2), value: deviceManager.isPlaying)
+            }
+
             MiniWaveformPreview()
-                .padding(24)
+                .padding(28)
         }
         .aspectRatio(1, contentMode: .fit)
         .padding(.horizontal, 36)
         .padding(.top, 20)
-        .shadow(color: .black.opacity(0.3), radius: 32, x: 0, y: 16)
+        .shadow(color: .black.opacity(0.28), radius: 36, x: 0, y: 18)
     }
-    
+
+    // MARK: – Info
+
     private var infoSection: some View {
         VStack(spacing: 8) {
             Text(deviceManager.currentPatternName)
                 .font(.title.bold())
                 .lineLimit(1)
 
-            Text(deviceManager.activeDevice?.name ?? "No Device Connected")
+            Text(deviceManager.activeDevice?.name ?? "Kein Gerät verbunden")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
         }
         .padding(.horizontal)
     }
-    
+
+    // MARK: – Intensity
+
     private var intensitySection: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 12) {
             HStack {
-                Text("Intensity")
+                Text("Intensität")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                 Spacer()
@@ -76,6 +99,7 @@ struct PlayerView: View {
                     .monospacedDigit()
             }
 
+            // Rose gradient slider
             Slider(value: $deviceManager.currentLevel, in: 0...100) { editing in
                 if !editing { deviceManager.setLevel(deviceManager.currentLevel) }
             }
@@ -83,18 +107,20 @@ struct PlayerView: View {
         }
         .padding(20)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: 20)
                 .fill(Color.cardBackground)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: 20)
                         .strokeBorder(Color.subtleBorder, lineWidth: 0.5)
                 )
         )
         .padding(.horizontal, 24)
     }
-    
+
+    // MARK: – Transport Controls
+
     private var transportControls: some View {
-        HStack(spacing: 48) {
+        HStack(spacing: 52) {
             Button {
                 deviceManager.selectPreviousPattern()
             } label: {
@@ -103,6 +129,7 @@ struct PlayerView: View {
                     .foregroundColor(.primary)
             }
 
+            // Play / Pause button with bloom
             Button {
                 if deviceManager.isPlaying {
                     deviceManager.stop()
@@ -111,16 +138,22 @@ struct PlayerView: View {
                 }
             } label: {
                 ZStack {
+                    // Outer bloom ring
                     Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [Color.appAccent, Color.appAccent.opacity(0.8)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
+                        .fill(Color.appAccent.opacity(0.15))
+                        .frame(width: 96, height: 96)
+                        .scaleEffect(deviceManager.isPlaying ? 1.0 : 0.85)
+                        .animation(
+                            deviceManager.isPlaying
+                                ? .easeInOut(duration: 1.4).repeatForever(autoreverses: true)
+                                : .easeOut(duration: 0.3),
+                            value: deviceManager.isPlaying
                         )
+
+                    Circle()
+                        .fill(LinearGradient.accentGradient)
                         .frame(width: 80, height: 80)
-                        .shadow(color: Color.glowAccent, radius: 16, x: 0, y: 8)
+                        .shadow(color: Color.glowAccent, radius: 22, x: 0, y: 10)
 
                     Image(systemName: deviceManager.isPlaying ? "pause.fill" : "play.fill")
                         .contentTransition(.symbolEffect(.replace))
@@ -140,26 +173,30 @@ struct PlayerView: View {
         .buttonStyle(ScaleButtonStyle(scale: 0.92))
         .padding(.vertical, 8)
     }
-    
+
+    // MARK: – Device Status
+
     private var deviceStatusSection: some View {
         HStack(spacing: 8) {
             Circle()
-                .fill(deviceManager.activeDevice?.isConnected == true ? Color.green : Color.gray)
+                .fill(deviceManager.activeDevice?.isConnected == true ? Color.appAccent.opacity(0.85) : Color.gray)
                 .frame(width: 8, height: 8)
-            
-            Text(deviceManager.activeDevice?.isConnected == true ? "Connected" : "Not Connected")
+
+            Text(deviceManager.activeDevice?.isConnected == true ? "Verbunden" : "Nicht verbunden")
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
         .animation(.easeInOut(duration: 0.2), value: deviceManager.activeDevice?.isConnected)
     }
-    
+
+    // MARK: – Stroke Range
+
     @ViewBuilder
     private var strokeRangeSection: some View {
         if deviceManager.activeDevice?.type == .handy {
             VStack(spacing: 16) {
                 HStack {
-                    Label("Stroke Range", systemImage: "arrow.left.and.right")
+                    Label("Hub-Bereich", systemImage: "arrow.left.and.right")
                         .font(.subheadline)
                         .fontWeight(.semibold)
                     Spacer()
@@ -185,14 +222,16 @@ struct PlayerView: View {
             }
             .padding(20)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: 20)
                     .fill(Color.cardBackground)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 16)
+                        RoundedRectangle(cornerRadius: 20)
                             .strokeBorder(Color.subtleBorder, lineWidth: 0.5)
                     )
             )
             .padding(.horizontal, 24)
         }
     }
+
+
 }

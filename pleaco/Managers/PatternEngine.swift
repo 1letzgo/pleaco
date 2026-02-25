@@ -6,9 +6,7 @@
 import Foundation
 
 class PatternEngine {
-    static let navigablePresets: [DeviceWavePreset] = DeviceWavePreset.allCases.filter { 
-        $0 != .audioReactive && $0 != .manual 
-    }
+    static let navigablePresets: [DeviceWavePreset] = DeviceWavePreset.allCases
     
     static var cachedCurves: [DeviceWavePreset: [Double]] {
         var curves: [DeviceWavePreset: [Double]] = [:]
@@ -139,7 +137,6 @@ class PatternEngine {
             let v1 = sin(time * 17.0) * sin(time * 5.3)
             let v2 = sin(time * 11.0 + 2.0) * 0.5
             return max(0.0, min(1.0, (v1 + v2 + 1.0) / 2.0))
-        default: return 0
         }
     }
 }
