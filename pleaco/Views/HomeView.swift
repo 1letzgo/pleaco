@@ -68,7 +68,7 @@ struct HomeView: View {
                     LazyVGrid(columns: columns, spacing: 12) {
                         ForEach(1...9, id: \.self) { index in
                             let isSpeed = index <= 3
-                            let title = isSpeed ? speedLabel(index) : "Muster \(index - 3)"
+                            let title = isSpeed ? speedLabel(index) : "Pattern \(index - 3)"
                             let icon = isSpeed ? "speedometer" : patternIcon(index)
                             
                             PatternCard(
@@ -167,30 +167,73 @@ struct PlayerCard: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            // 1. Sliders at the top
+            // 1. Device Specific Sliders (Integrated)
             if deviceManager.activeDevice?.type == .handy {
                 VStack(spacing: 4) {
                     HStack {
-                        Text("HUB")
+                        Text("HB RANGE")
                             .font(.system(size: 10, weight: .black))
                             .foregroundColor(.white.opacity(0.6))
                         Spacer()
-                        Text("\(Int(deviceManager.strokeMin))–\(Int(deviceManager.strokeMax))%")
+                        Text("\(Int(deviceManager.strokeMin))% - \(Int(deviceManager.strokeMax))%")
                             .font(.system(size: 10, weight: .bold).monospacedDigit())
                     }
-                    RangeSlider(
-                        lowerValue: $deviceManager.strokeMin,
-                        upperValue: $deviceManager.strokeMax,
-                        range: 0...100
-                    ) { editing in
-                        if !editing {
-                            deviceManager.setStrokeRange(min: deviceManager.strokeMin, max: deviceManager.strokeMax)
-                        }
+                    RangeSlider(lowerValue: $deviceManager.strokeMin, upperValue: $deviceManager.strokeMax, range: 0...100) { editing in
+                        if !editing { deviceManager.setStrokeRange(min: deviceManager.strokeMin, max: deviceManager.strokeMax) }
                     }
                     .frame(height: 20)
                 }
+            } else if deviceManager.activeDevice?.type == .ossm {
+                VStack(spacing: 8) {
+                    // DEPTH
+                    VStack(spacing: 4) {
+                        HStack {
+                            Text("DEPTH")
+                                .font(.system(size: 10, weight: .black))
+                                .foregroundColor(.white.opacity(0.6))
+                            Spacer()
+                            Text("\(Int(deviceManager.strokeMin))%")
+                                .font(.system(size: 10, weight: .bold).monospacedDigit())
+                        }
+                        Slider(value: $deviceManager.strokeMin, in: 0...100, step: 1) { editing in
+                            if !editing { deviceManager.setStrokeRange(min: deviceManager.strokeMin, max: deviceManager.strokeMax) }
+                        }
+                        .tint(.white)
+                    }
+
+                    // STROKE
+                    VStack(spacing: 4) {
+                        HStack {
+                            Text("STROKE")
+                                .font(.system(size: 10, weight: .black))
+                                .foregroundColor(.white.opacity(0.6))
+                            Spacer()
+                            Text("\(Int(deviceManager.strokeMax))%")
+                                .font(.system(size: 10, weight: .bold).monospacedDigit())
+                        }
+                        Slider(value: $deviceManager.strokeMax, in: 0...100, step: 1) { editing in
+                            if !editing { deviceManager.setStrokeRange(min: deviceManager.strokeMin, max: deviceManager.strokeMax) }
+                        }
+                        .tint(.white)
+                    }
+                    
+                    // SENSATION
+                    VStack(spacing: 4) {
+                        HStack {
+                            Text("SENSATION")
+                                .font(.system(size: 10, weight: .black))
+                                .foregroundColor(.white.opacity(0.6))
+                            Spacer()
+                            Text("\(Int(deviceManager.ossmSensation))%")
+                                .font(.system(size: 10, weight: .bold).monospacedDigit())
+                        }
+                        Slider(value: $deviceManager.ossmSensation, in: 0...100, step: 1)
+                            .tint(.white)
+                    }
+                }
             }
 
+            // 2. Generic Intensity
             if deviceManager.activeDevice?.type != .lovespouse {
                 VStack(spacing: 4) {
                     HStack {
@@ -206,10 +249,6 @@ struct PlayerCard: View {
                     }
                     .tint(.white)
                 }
-            }
-
-            // Spacing instead of Divider for a seamless look
-            if deviceManager.activeDevice?.type != .lovespouse || deviceManager.activeDevice?.type == .handy {
                 Spacer().frame(height: 8)
             }
 
@@ -268,7 +307,7 @@ struct PlayerCard: View {
                 Spacer()
 
                 // Device Label (Right)
-                Text(deviceManager.activeDevice?.name ?? "Kein Gerät")
+                Text(deviceManager.activeDevice?.name ?? "No Device")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundColor(.white)
                     .lineLimit(1)
@@ -504,7 +543,7 @@ struct PatternCard: View {
                 Button(role: .destructive) {
                     onDelete()
                 } label: {
-                    Label("Löschen", systemImage: "trash")
+                    Label("Delete", systemImage: "trash")
                 }
             }
         }
@@ -538,7 +577,7 @@ struct FunScriptImportButton: View {
                 let fileName = url.deletingPathExtension().lastPathComponent
 
                 guard url.startAccessingSecurityScopedResource() else {
-                    alertMessage = "Zugriff auf Datei verweigert."
+                    alertMessage = "File access denied."
                     showingAlert = true
                     return
                 }
@@ -546,7 +585,7 @@ struct FunScriptImportButton: View {
                 defer { url.stopAccessingSecurityScopedResource() }
 
                 if deviceManager.customScripts.contains(where: { $0.name == fileName }) {
-                    alertMessage = "Ein Skript mit dem Namen \"\(fileName)\" existiert bereits."
+                    alertMessage = "A script with the name \"\(fileName)\" already exists."
                     showingAlert = true
                     return
                 }
@@ -558,13 +597,13 @@ struct FunScriptImportButton: View {
                     deviceManager.addCustomScript(namedScript)
                     deviceManager.applyNamedFunScript(namedScript)
                 } catch {
-                    alertMessage = "Import fehlgeschlagen: \(error.localizedDescription)"
+                    alertMessage = "Import failed: \(error.localizedDescription)"
                     showingAlert = true
                 }
             }
         }
         #endif
-        .alert("Import-Fehler", isPresented: $showingAlert) {
+        .alert("Import Error", isPresented: $showingAlert) {
             Button("OK", role: .cancel) { }
         } message: {
             Text(alertMessage)

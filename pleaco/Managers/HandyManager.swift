@@ -65,7 +65,17 @@ class HandyManager: ObservableObject {
     func setSlideRange(min: Double, max: Double) {
         let pmin = Int(Swift.max(0, Swift.min(100, min)))
         let pmax = Int(Swift.max(0, Swift.min(100, max)))
-        sendRequest(path: "/sldr", method: "PUT", params: ["min": pmin, "max": pmax]) { _ in }
+        NSLog("🔵 HandyManager: Setting stroke range min=\(pmin), max=\(pmax)")
+        sendRequest(path: "/slide", method: "PUT", params: ["min": pmin, "max": pmax]) { result in
+            switch result {
+            case .success(let data):
+                if let str = String(data: data, encoding: .utf8) {
+                    NSLog("🔵 HandyManager: /slide response: \(str)")
+                }
+            case .failure(let error):
+                NSLog("🔵 HandyManager: /slide error: \(error)")
+            }
+        }
     }
     
     private func sendRequest(path: String, method: String = "GET", params: [String: Any] = [:], completion: @escaping (Result<Data, Error>) -> Void = { _ in }) {

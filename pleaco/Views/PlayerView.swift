@@ -16,15 +16,15 @@ struct PlayerView: View {
 
                 infoSection
 
-                if deviceManager.activeDevice?.type != .lovespouse {
+                if deviceManager.activeDevice?.type != .lovespouse && deviceManager.activeDevice?.type != .ossm {
                     intensitySection
                 }
-
-                transportControls
 
                 deviceStatusSection
 
                 strokeRangeSection
+
+                transportControls
 
                 Spacer(minLength: 40)
             }
@@ -88,7 +88,7 @@ struct PlayerView: View {
     private var intensitySection: some View {
         VStack(spacing: 12) {
             HStack {
-                Text("Intensität")
+                Text("INTENSITY")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                 Spacer()
@@ -194,31 +194,26 @@ struct PlayerView: View {
     @ViewBuilder
     private var strokeRangeSection: some View {
         if deviceManager.activeDevice?.type == .handy {
-            VStack(spacing: 16) {
+            VStack(spacing: 20) {
                 HStack {
-                    Label("Hub-Bereich", systemImage: "arrow.left.and.right")
+                    Text("HB RANGE")
+                        .font(.headline)
+                        .fontWeight(.bold)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text("\(Int(deviceManager.strokeMin))% - \(Int(deviceManager.strokeMax))%")
                         .font(.subheadline)
                         .fontWeight(.semibold)
-                    Spacer()
-                    Text("\(Int(deviceManager.strokeMin))–\(Int(deviceManager.strokeMax))%")
-                        .font(.subheadline)
                         .foregroundColor(.secondary)
                         .monospacedDigit()
                 }
 
-                RangeSlider(
-                    lowerValue: $deviceManager.strokeMin,
-                    upperValue: $deviceManager.strokeMax,
-                    range: 0...100
-                ) { editing in
+                RangeSlider(lowerValue: $deviceManager.strokeMin, upperValue: $deviceManager.strokeMax, range: 0...100) { editing in
                     if !editing {
-                        deviceManager.setStrokeRange(
-                            min: deviceManager.strokeMin,
-                            max: deviceManager.strokeMax
-                        )
+                        deviceManager.setStrokeRange(min: deviceManager.strokeMin, max: deviceManager.strokeMax)
                     }
                 }
-                .frame(height: 36)
+                .frame(height: 32)
             }
             .padding(20)
             .background(
@@ -230,8 +225,162 @@ struct PlayerView: View {
                     )
             )
             .padding(.horizontal, 24)
+        } else if deviceManager.activeDevice?.type == .ossm {
+            VStack(spacing: 28) {
+                // STROKER MODE Toggle
+                HStack {
+                    Label("STROKER MODE", systemImage: "arrow.left.and.right.circle.fill")
+                        .font(.subheadline.bold())
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Toggle("", isOn: $deviceManager.ossmStrokerMode)
+                        .labelsHidden()
+                        .tint(Color.appAccent)
+                }
+                .padding(.bottom, 4)
+
+                // SPEED (Intensity)
+                OSSMControlSlider(
+                    title: "SPEED",
+                    value: $deviceManager.currentLevel,
+                    limitMin: $deviceManager.ossmSpeedLimitMin,
+                    limitMax: $deviceManager.ossmSpeedLimitMax,
+                    icon: "gauge.with.needle",
+                    onSubmit: { deviceManager.setLevel(deviceManager.currentLevel) }
+                )
+
+                // STROKE
+                OSSMControlSlider(
+                    title: "STROKE",
+                    value: $deviceManager.strokeMax,
+                    limitMin: $deviceManager.ossmStrokeLimitMin,
+                    limitMax: $deviceManager.ossmStrokeLimitMax,
+                    icon: "arrow.left.and.right",
+                    onSubmit: { deviceManager.setStrokeRange(min: deviceManager.strokeMin, max: deviceManager.strokeMax) }
+                )
+
+                // DEPTH
+                OSSMControlSlider(
+                    title: "DEPTH",
+                    value: $deviceManager.strokeMin,
+                    limitMin: $deviceManager.ossmDepthLimitMin,
+                    limitMax: $deviceManager.ossmDepthLimitMax,
+                    icon: "arrow.down.and.line.horizontal.and.arrow.up",
+                    onSubmit: { deviceManager.setStrokeRange(min: deviceManager.strokeMin, max: deviceManager.strokeMax) }
+                )
+                
+                // SENSATION
+                OSSMControlSlider(
+                    title: "SENSATION",
+                    value: $deviceManager.ossmSensation,
+                    limitMin: $deviceManager.ossmSensationLimitMin,
+                    limitMax: $deviceManager.ossmSensationLimitMax,
+                    icon: "antenna.radiowaves.left.and.right",
+                    onSubmit: { }
+                )
+
+                // PATTERN DESCRIPTION
+                if let patternIdx = Int(exactly: deviceManager.ossmManager.availablePatterns.firstIndex(of: deviceManager.currentPatternName) ?? -1),
+                   let desc = deviceManager.ossmManager.patternDescriptions[patternIdx], !desc.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("DESCRIPTION")
+                            .font(.caption2.bold())
+                            .foregroundColor(.secondary)
+                        Text(desc)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 4)
+                }
+            }
+            .padding(20)
+            .background(
+                RoundedRectangle(cornerRadius: 24)
+                    .fill(Color.cardBackground)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 24)
+                            .strokeBorder(Color.subtleBorder, lineWidth: 0.5)
+                    )
+            )
+            .padding(.horizontal, 24)
         }
     }
 
+}
 
+// MARK: – OSSM Control Components
+
+struct OSSMControlSlider: View {
+    let title: String
+    @Binding var value: Double
+    @Binding var limitMin: Double
+    @Binding var limitMax: Double
+    var range: ClosedRange<Double> = 0...100
+    let icon: String
+    var onSubmit: () -> Void
+
+    var body: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Label(title, systemImage: icon)
+                    .font(.subheadline.bold())
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text("\(Int(value))%")
+                    .font(.subheadline.bold())
+                    .foregroundColor(.secondary)
+                    .monospacedDigit()
+            }
+
+            // Main constrained slider
+            Slider(value: $value, in: limitMin...limitMax, step: 1) { editing in
+                if !editing { onSubmit() }
+            }
+            .tint(Color.appAccent)
+
+            // Range limits underneath
+            VStack(spacing: 8) {
+                HStack {
+                    Text("LIMITS")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.secondary.opacity(0.6))
+                    Spacer()
+                    Text("\(Int(limitMin))% - \(Int(limitMax))%")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.secondary.opacity(0.6))
+                        .monospacedDigit()
+                }
+
+                RangeSlider(lowerValue: $limitMin, upperValue: $limitMax, range: range)
+                    .frame(height: 20)
+                    .opacity(0.6)
+                    .onChange(of: limitMin) { oldValue, newValue in
+                        // Rescale value proportionally to new range
+                        let oldRange = limitMax - oldValue
+                        let newRange = limitMax - newValue
+                        if oldRange > 0 {
+                            let proportion = (value - oldValue) / oldRange
+                            value = max(newValue, min(limitMax, newValue + (proportion * newRange)))
+                        } else {
+                            value = max(newValue, min(limitMax, value))
+                        }
+                        onSubmit()
+                    }
+                    .onChange(of: limitMax) { oldValue, newValue in
+                        // Rescale value proportionally to new range
+                        let oldRange = oldValue - limitMin
+                        let newRange = newValue - limitMin
+                        if oldRange > 0 {
+                            let proportion = (value - limitMin) / oldRange
+                            value = max(limitMin, min(newValue, limitMin + (proportion * newRange)))
+                        } else {
+                            value = max(limitMin, min(newValue, value))
+                        }
+                        onSubmit()
+                    }
+            } // Close inner VStack
+        } // Close outer VStack
+    }
 }

@@ -16,6 +16,7 @@ enum DeviceType: String, CaseIterable, Identifiable, Codable {
     case oh = "Oh."
     case intiface = "Intiface"
     case lovespouse = "LoveSpouse"
+    case ossm = "OSSM"
     case `internal` = "Phone Vibration"
 
     var id: String { rawValue }
@@ -26,6 +27,7 @@ enum DeviceType: String, CaseIterable, Identifiable, Codable {
         case .oh: return "waveform"
         case .intiface: return "cable.connector"
         case .lovespouse: return "antenna.radiowaves.left.and.right"
+        case .ossm: return "bolt.horizontal.fill"
         case .internal: return "iphone.gen3"
         }
     }
@@ -140,10 +142,37 @@ class DeviceManager: ObservableObject {
         }
     }
     
+    @Published var ossmSensation: Double = 50 {
+        didSet {
+            UserDefaults.standard.set(ossmSensation, forKey: "ossmSensation")
+            if isPlaying && activeDevice?.type == .ossm {
+                ossmManager.setSensation(ossmSensation)
+            }
+        }
+    }
+    
+    @Published var ossmStrokerMode: Bool = false {
+        didSet {
+            UserDefaults.standard.set(ossmStrokerMode, forKey: "ossmStrokerMode")
+            ossmManager.strokerMode = ossmStrokerMode
+        }
+    }
+    
+    // OSSM Limiters
+    @Published var ossmSpeedLimitMin: Double = 0 { didSet { UserDefaults.standard.set(ossmSpeedLimitMin, forKey: "ossmSpeedLimitMin") } }
+    @Published var ossmSpeedLimitMax: Double = 100 { didSet { UserDefaults.standard.set(ossmSpeedLimitMax, forKey: "ossmSpeedLimitMax") } }
+    @Published var ossmStrokeLimitMin: Double = 0 { didSet { UserDefaults.standard.set(ossmStrokeLimitMin, forKey: "ossmStrokeLimitMin") } }
+    @Published var ossmStrokeLimitMax: Double = 100 { didSet { UserDefaults.standard.set(ossmStrokeLimitMax, forKey: "ossmStrokeLimitMax") } }
+    @Published var ossmDepthLimitMin: Double = 0 { didSet { UserDefaults.standard.set(ossmDepthLimitMin, forKey: "ossmDepthLimitMin") } }
+    @Published var ossmDepthLimitMax: Double = 100 { didSet { UserDefaults.standard.set(ossmDepthLimitMax, forKey: "ossmDepthLimitMax") } }
+    @Published var ossmSensationLimitMin: Double = 0 { didSet { UserDefaults.standard.set(ossmSensationLimitMin, forKey: "ossmSensationLimitMin") } }
+    @Published var ossmSensationLimitMax: Double = 100 { didSet { UserDefaults.standard.set(ossmSensationLimitMax, forKey: "ossmSensationLimitMax") } }
+    
 
     private var handyManager = HandyManager.shared
     private var buttplugManager = ButtplugManager.shared
     private var loveSpouseManager = LoveSpouseManager.shared
+    var ossmManager = OSSMManager.shared
     private var hapticManager = HapticManager.shared
 
     @Published var waveTime: Double = 0
@@ -163,6 +192,7 @@ class DeviceManager: ObservableObject {
     private var waveTimer: Timer?
     private var connectionSubscription: AnyCancellable?
     private var loveSpouseSubscription: AnyCancellable?
+    private var ossmSubscription: AnyCancellable?
 
     var activeDevice: SavedDevice? {
         guard let id = activeDeviceId else { return nil }
@@ -174,10 +204,10 @@ class DeviceManager: ObservableObject {
             let prog = selectedLoveSpouseProgram
             if prog > 0 {
                 switch prog {
-                case 1: return "Leicht"
-                case 2: return "Mittel"
-                case 3: return "Stark"
-                default: return "Muster \(prog - 3)"
+                case 1: return "Light"
+                case 2: return "Medium"
+                case 3: return "Strong"
+                default: return "Pattern \(prog - 3)"
                 }
             }
         }
@@ -185,7 +215,7 @@ class DeviceManager: ObservableObject {
             return script.name
         }
         if activeFunScript != nil {
-            return "Importiertes Script"
+            return "Imported Script"
         }
         return selectedPreset.rawValue
     }
@@ -202,6 +232,21 @@ class DeviceManager: ObservableObject {
         
         self.strokeMin = UserDefaults.standard.double(forKey: "strokeMin")
         self.strokeMax = UserDefaults.standard.object(forKey: "strokeMax") as? Double ?? 100
+        self.ossmSensation = UserDefaults.standard.double(forKey: "ossmSensation")
+        if self.ossmSensation == 0 { self.ossmSensation = 50 }
+        
+        self.ossmStrokerMode = UserDefaults.standard.bool(forKey: "ossmStrokerMode")
+        ossmManager.strokerMode = self.ossmStrokerMode
+        
+        // OSSM Limiters
+        self.ossmSpeedLimitMax = UserDefaults.standard.object(forKey: "ossmSpeedLimitMax") as? Double ?? 100
+        self.ossmSpeedLimitMin = UserDefaults.standard.double(forKey: "ossmSpeedLimitMin")
+        self.ossmStrokeLimitMax = UserDefaults.standard.object(forKey: "ossmStrokeLimitMax") as? Double ?? 100
+        self.ossmStrokeLimitMin = UserDefaults.standard.double(forKey: "ossmStrokeLimitMin")
+        self.ossmDepthLimitMax = UserDefaults.standard.object(forKey: "ossmDepthLimitMax") as? Double ?? 100
+        self.ossmDepthLimitMin = UserDefaults.standard.double(forKey: "ossmDepthLimitMin")
+        self.ossmSensationLimitMax = UserDefaults.standard.object(forKey: "ossmSensationLimitMax") as? Double ?? 100
+        self.ossmSensationLimitMin = UserDefaults.standard.double(forKey: "ossmSensationLimitMin")
         
         loadDevices()
         restoreActiveDevice()
@@ -233,7 +278,7 @@ class DeviceManager: ObservableObject {
                 handyManager.connectionKey = device.connectionKey
             case .intiface:
                 buttplugManager.serverAddress = device.serverAddress
-            case .lovespouse, .internal:
+            case .lovespouse, .ossm, .internal:
                 break
             }
         }
@@ -263,6 +308,20 @@ class DeviceManager: ObservableObject {
                     }
                 }
             }
+        
+        // Reactive observer for OSSM readiness
+        ossmSubscription = ossmManager.$isReady
+            .receive(on: RunLoop.main)
+            .sink { [weak self] isReady in
+                guard let self = self else { return }
+                if let device = self.activeDevice, device.type == .ossm {
+                    if device.isConnected != isReady {
+                        device.isConnected = isReady
+                        self.objectWillChange.send()
+                        NSLog("🔔 DeviceManager: OSSM reactive sync – Ready: \(isReady)")
+                    }
+                }
+            }
     }
 
     // MARK: - Device Management
@@ -283,6 +342,8 @@ class DeviceManager: ObservableObject {
     }
 
     func setActiveDevice(_ device: SavedDevice?, autoStart: Bool = false) {
+        NSLog("📱 DeviceManager: Hosting change - Setting active device to \(device?.name ?? "nil") (Type: \(device?.type.rawValue ?? "nil"))")
+
         // Disconnect old active device if it exists
         if let currentActive = activeDevice {
             disconnectDevice(currentActive)
@@ -293,9 +354,12 @@ class DeviceManager: ObservableObject {
         activeDeviceId = device?.id
         UserDefaults.standard.set(device?.id.uuidString, forKey: "activeDeviceId")
 
-        guard let device = device else { return }
+        guard let device = device else { 
+            objectWillChange.send()
+            return 
+        }
 
-        // Configure managers without blocking
+        // Configure managers
         switch device.type {
         case .handy:
             handyManager.connectionKey = device.connectionKey
@@ -305,27 +369,20 @@ class DeviceManager: ObservableObject {
             handyManager.deviceType = "Oh."
         case .intiface:
             buttplugManager.serverAddress = device.serverAddress
-        case .lovespouse:
-            objectWillChange.send()
-        case .internal:
-            device.isConnected = hapticManager.isSupported
-            if device.isConnected {
-                NSLog("🔔 DeviceManager: Internal haptics connected")
-            } else {
-                NSLog("🔔 DeviceManager: Internal haptics NOT supported")
-            }
-            objectWillChange.send()
+        case .lovespouse, .ossm, .internal:
+            break
         }
-        
-        // Check connection asynchronously in background
+
+        // Check connection asynchronously
         checkDeviceConnectionAsync(device)
-        
-        // Auto-start playback on selection if requested
+
         if autoStart {
             DispatchQueue.main.async {
                 self.start()
             }
         }
+        
+        objectWillChange.send()
     }
 
     private func disconnectDevice(_ device: SavedDevice) {
@@ -335,8 +392,10 @@ class DeviceManager: ObservableObject {
             handyManager.stopMotion()
         case .intiface:
             buttplugManager.disconnect()
-        case .lovespouse:
+        case .lovespouse, .ossm:
             loveSpouseManager.stopAll()
+            ossmManager.stop()
+            ossmManager.disconnect()
         case .internal:
             break
         }
@@ -363,6 +422,13 @@ class DeviceManager: ObservableObject {
             }
         case .lovespouse:
             loveSpouseManager.checkConnection { [weak self] success in
+                DispatchQueue.main.async {
+                    device.isConnected = success
+                    self?.objectWillChange.send()
+                }
+            }
+        case .ossm:
+            ossmManager.startScanning { [weak self] success in
                 DispatchQueue.main.async {
                     device.isConnected = success
                     self?.objectWillChange.send()
@@ -405,10 +471,13 @@ class DeviceManager: ObservableObject {
         switch device.type {
         case .handy, .oh:
             handyManager.startHamp()
+            handyManager.setSlideRange(min: strokeMin, max: strokeMax)
         case .intiface:
             break
         case .lovespouse:
             loveSpouseManager.selectProgram(selectedLoveSpouseProgram)
+        case .ossm:
+            ossmManager.setLevel(currentLevel)
         case .internal:
             hapticManager.start()
         }
@@ -420,8 +489,9 @@ class DeviceManager: ObservableObject {
         waveTime = 0
         funScriptPositionMs = 0
         
-        if activeDevice?.type == .lovespouse {
+        if activeDevice?.type == .lovespouse || activeDevice?.type == .ossm {
             loveSpouseManager.stopAll()
+            ossmManager.stop()
         }
         
         #if os(iOS)
@@ -430,11 +500,10 @@ class DeviceManager: ObservableObject {
         }
         #endif
         
-        hapticManager.stop()
-
         handyManager.stopMotion()
         buttplugManager.stopAllDevices()
         loveSpouseManager.stopAll()
+        ossmManager.stop()
         hapticManager.stop()
     }
 
@@ -460,6 +529,11 @@ class DeviceManager: ObservableObject {
         }
 
         handyManager.setSlideRange(min: strokeMin, max: strokeMax)
+        
+        if activeDevice?.type == .ossm {
+            ossmManager.setDepth(strokeMin)
+            ossmManager.setStroke(strokeMax)
+        }
     }
 
     func applyPreset(_ preset: DeviceWavePreset) {
@@ -470,6 +544,10 @@ class DeviceManager: ObservableObject {
 
         if !isPlaying {
             start()
+        }
+        
+        if activeDevice?.type == .ossm {
+            ossmManager.setSensation(ossmSensation)
         }
 
         // Restart wave timer with new preset
@@ -532,25 +610,23 @@ class DeviceManager: ObservableObject {
     // MARK: - Pattern Navigation
 
     func selectLoveSpouseProgram(_ index: Int) {
-        guard activeDevice?.type == .lovespouse else { return }
-        
-        // Reset software patterns
-        stopWaveTimer()
-        selectedPreset = .sine75 // Neutral state for software
-        activeFunScript = nil
-        activeFunScriptId = nil
+        guard activeDevice?.type == .lovespouse || activeDevice?.type == .ossm else { return }
         
         selectedLoveSpouseProgram = index
         
         if index > 0 {
             isPlaying = true
-            loveSpouseManager.selectProgram(index)
+            if activeDevice?.type == .lovespouse {
+                loveSpouseManager.selectProgram(index)
+            } else if activeDevice?.type == .ossm {
+                ossmManager.setPattern(index - 1) // Map 1-7 to 0-6
+            }
             #if os(iOS)
             DispatchQueue.main.async {
                 UIApplication.shared.isIdleTimerDisabled = true
             }
             #endif
-        } else {
+        } else { // index == 0
             stop()
         }
         objectWillChange.send()
@@ -559,9 +635,10 @@ class DeviceManager: ObservableObject {
     func selectNextPattern() {
         let presets = PatternEngine.navigablePresets
         let isLS = activeDevice?.type == .lovespouse
+        let isOSSM = activeDevice?.type == .ossm
         
         // 1. Current state: LoveSpouse Program
-        if isLS && selectedLoveSpouseProgram > 0 {
+        if (isLS || isOSSM) && selectedLoveSpouseProgram > 0 {
             if selectedLoveSpouseProgram < 9 {
                 selectLoveSpouseProgram(selectedLoveSpouseProgram + 1)
             } else {
@@ -580,7 +657,7 @@ class DeviceManager: ObservableObject {
                 } else if !customScripts.isEmpty {
                     // End of Presets -> Move to first Custom Script
                     applyNamedFunScript(customScripts[0])
-                } else if isLS {
+                } else if isLS || isOSSM {
                     // End of Presets (no scripts) -> Back to LS Program 1
                     selectLoveSpouseProgram(1)
                 } else {
@@ -595,7 +672,7 @@ class DeviceManager: ObservableObject {
         if let currentId = activeFunScriptId, let idx = customScripts.firstIndex(where: { $0.id == currentId }) {
             if idx < customScripts.count - 1 {
                 applyNamedFunScript(customScripts[idx + 1])
-            } else if isLS {
+            } else if isLS || isOSSM {
                 // End of Scripts -> Loop back to LS Program 1
                 selectLoveSpouseProgram(1)
             } else {
@@ -606,16 +683,17 @@ class DeviceManager: ObservableObject {
         }
         
         // Fallback
-        if isLS { selectLoveSpouseProgram(1) }
+        if isLS || isOSSM { selectLoveSpouseProgram(1) }
         else { applyPreset(presets.first ?? .sine75) }
     }
 
     func selectPreviousPattern() {
         let presets = PatternEngine.navigablePresets
         let isLS = activeDevice?.type == .lovespouse
+        let isOSSM = activeDevice?.type == .ossm
         
         // 1. Current state: LoveSpouse Program
-        if isLS && selectedLoveSpouseProgram > 0 {
+        if (isLS || isOSSM) && selectedLoveSpouseProgram > 0 {
             if selectedLoveSpouseProgram > 1 {
                 selectLoveSpouseProgram(selectedLoveSpouseProgram - 1)
             } else if !customScripts.isEmpty {
@@ -635,7 +713,7 @@ class DeviceManager: ObservableObject {
             if let idx = presets.firstIndex(of: selectedPreset) {
                 if idx > 0 {
                     applyPreset(presets[idx - 1])
-                } else if isLS {
+                } else if isLS || isOSSM {
                     // Start of Presets -> Back to LS Program 9
                     selectLoveSpouseProgram(9)
                 } else if !customScripts.isEmpty {
@@ -661,7 +739,7 @@ class DeviceManager: ObservableObject {
         }
         
         // Fallback
-        if isLS { selectLoveSpouseProgram(9) }
+        if isLS || isOSSM { selectLoveSpouseProgram(9) }
         else { applyPreset(presets.last ?? .sine75) }
     }
 
@@ -671,7 +749,7 @@ class DeviceManager: ObservableObject {
         // FunScript branch: 50 Hz timer advances position through the script
         if let script = activeFunScript {
             let fsInterval: TimeInterval
-            if activeDevice?.type == .handy || activeDevice?.type == .oh {
+            if activeDevice?.type == .handy || activeDevice?.type == .oh || activeDevice?.type == .ossm {
                 fsInterval = 0.1
             } else if activeDevice?.type == .lovespouse {
                 fsInterval = 0.2 // Throttle to 5Hz to avoid BLE cancel-loop
@@ -705,7 +783,7 @@ class DeviceManager: ObservableObject {
         var interval = timerInterval(for: selectedPreset)
         
         // Cloud/BLE devices cannot handle high-frequency updates
-        if activeDevice?.type == .handy || activeDevice?.type == .oh {
+        if activeDevice?.type == .handy || activeDevice?.type == .oh || activeDevice?.type == .ossm {
             interval = max(0.1, interval)
         } else if activeDevice?.type == .lovespouse {
             interval = max(0.2, interval) // Throttle to 5Hz
@@ -756,6 +834,8 @@ class DeviceManager: ObservableObject {
             buttplugManager.setLevel(level)
         case .lovespouse:
             loveSpouseManager.setLevel(level)
+        case .ossm:
+            ossmManager.setLevel(level)
         case .internal:
             hapticManager.updateIntensity(level)
         }
@@ -920,7 +1000,7 @@ class DeviceManager: ObservableObject {
                 handyManager.deviceType = device.type == .handy ? "The Handy" : "Oh."
             case .intiface:
                 buttplugManager.serverAddress = device.serverAddress
-            case .lovespouse, .internal:
+            case .lovespouse, .ossm, .internal:
                 break
             }
             

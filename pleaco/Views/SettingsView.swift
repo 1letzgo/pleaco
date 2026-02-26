@@ -34,9 +34,9 @@ struct SettingsView: View {
     // MARK: – Devices Section
 
     private var devicesSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
-                SectionHeader(title: "Geräte", icon: "cable.connector")
+                SectionHeader(title: "Devices", icon: "cable.connector")
                 Spacer()
                 Button {
                     showingAddEditor = true
@@ -44,14 +44,14 @@ struct SettingsView: View {
                     HStack(spacing: 4) {
                         Image(systemName: "plus.circle.fill")
                             .font(.title3)
-                        Text("Hinzufügen")
+                        Text("Add")
                             .font(.subheadline)
                             .fontWeight(.medium)
                     }
                     .foregroundColor(Color.appAccent)
                 }
             }
-            .padding(.horizontal)
+            .padding(.horizontal, 18)
 
             DeviceCard(device: deviceManager.internalDevice, onEdit: { }) {
                 dismiss()
@@ -70,10 +70,10 @@ struct SettingsView: View {
     // MARK: – Playback Section
 
     private var playbackSection: some View {
-        SettingsSectionCard(title: "Wiedergabe", icon: "gauge.with.needle") {
+        SettingsSectionCard(title: "Playback", icon: "gauge.with.needle") {
             VStack(spacing: 16) {
                 HStack {
-                    Text("Standard-Intensität")
+                    Text("Default Intensity")
                         .font(.subheadline)
                     Spacer()
                     Text("\(Int(deviceManager.defaultIntensity))%")
@@ -106,7 +106,7 @@ struct SettingsSectionCard<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             SectionHeader(title: title, icon: icon)
-                .padding(.horizontal)
+                .padding(.horizontal, 18)
 
             VStack(spacing: 0) {
                 content
@@ -120,7 +120,7 @@ struct SettingsSectionCard<Content: View>: View {
                             .strokeBorder(Color.subtleBorder, lineWidth: 0.5)
                     )
             )
-            .padding(.horizontal)
+            .padding(.horizontal, 18)
         }
     }
 }
@@ -137,43 +137,32 @@ struct DeviceCard: View {
         VStack(spacing: 0) {
             HStack(spacing: 16) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 16)
+                    Circle()
                         .fill(
                             deviceManager.activeDeviceId == device.id
                                 ? AnyShapeStyle(Color.white.opacity(0.15))
                                 : AnyShapeStyle(Color.surfaceSecondary)
                         )
-                        .frame(width: 52, height: 52)
+                        .frame(width: 38, height: 38)
 
                     Image(systemName: device.type.icon)
-                        .font(.title3)
+                        .font(.system(size: 14))
                         .foregroundColor(deviceManager.activeDeviceId == device.id ? .white : Color.appAccent)
                 }
 
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) {
-                        Text(device.name)
-                            .font(.headline)
-                            .foregroundColor(deviceManager.activeDeviceId == device.id ? .white : .primary)
-                        
-                        if deviceManager.activeDeviceId == device.id && device.isConnected {
-                            Text("BEREIT")
-                                .font(.system(size: 9, weight: .bold, design: .rounded))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Capsule().fill(Color.white.opacity(0.2)))
-                                .foregroundColor(.white)
-                        }
-                    }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(device.name) (\(device.type.rawValue))")
+                        .font(.subheadline.bold())
+                        .foregroundColor(deviceManager.activeDeviceId == device.id ? .white : .primary)
 
                     HStack(spacing: 6) {
                         Circle()
-                            .fill(deviceManager.activeDeviceId == device.id ? Color.white : (device.isConnected ? Color.appAccent.opacity(0.85) : Color.gray))
-                            .frame(width: 6, height: 6)
+                            .fill(deviceManager.activeDeviceId == device.id ? Color.white.opacity(0.8) : (device.isConnected ? Color.appAccent.opacity(0.85) : Color.gray))
+                            .frame(width: 5, height: 5)
 
-                        Text(device.type.rawValue)
-                            .font(.caption)
-                            .foregroundColor(deviceManager.activeDeviceId == device.id ? .white.opacity(0.8) : .secondary)
+                        Text(device.isConnected ? "Verbunden" : "Nicht verbunden")
+                            .font(.system(size: 11))
+                            .foregroundColor(deviceManager.activeDeviceId == device.id ? .white.opacity(0.7) : .secondary)
                     }
                 }
 
@@ -182,15 +171,15 @@ struct DeviceCard: View {
                 if device.type != .internal {
                     Button(action: onEdit) {
                         Image(systemName: "pencil")
-                            .font(.system(size: 18, weight: .medium))
+                            .font(.system(size: 14, weight: .medium))
                             .foregroundColor(deviceManager.activeDeviceId == device.id ? .white : Color.appAccent)
-                            .padding(8)
+                            .padding(6)
                             .background(Circle().fill(deviceManager.activeDeviceId == device.id ? Color.white.opacity(0.2) : Color.surfaceSecondary))
                     }
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.vertical, 12)
+            .padding(.vertical, 6)
             .padding(.horizontal, 16)
             .contentShape(Rectangle())
             .onTapGesture {
@@ -208,7 +197,7 @@ struct DeviceCard: View {
                         .strokeBorder(deviceManager.activeDeviceId == device.id ? Color.white.opacity(0.12) : Color.subtleBorder, lineWidth: 0.5)
                 )
         )
-        .padding(.horizontal)
+        .padding(.horizontal, 18)
         .shadow(
             color: deviceManager.activeDeviceId == device.id ? Color.glowAccent : .black.opacity(0.05),
             radius: deviceManager.activeDeviceId == device.id ? 10 : 3,
@@ -248,8 +237,8 @@ struct DeviceEditorSheet: View {
             Form {
                 Section("Details") {
                     if editingDevice == nil {
-                        Picker("Typ", selection: $deviceType) {
-                            ForEach([DeviceType.handy, .oh, .intiface, .lovespouse], id: \.self) { type in
+                        Picker("Type", selection: $deviceType) {
+                            ForEach([DeviceType.handy, .oh, .intiface, .lovespouse, .ossm], id: \.self) { type in
                                 HStack {
                                     Image(systemName: type.icon)
                                     Text(type.rawValue)
@@ -258,22 +247,22 @@ struct DeviceEditorSheet: View {
                             }
                         }
                     } else {
-                        LabeledContent("Typ", value: deviceType.rawValue)
+                        LabeledContent("Type", value: deviceType.rawValue)
                     }
 
-                    TextField("Gerätename", text: $deviceName)
+                    TextField("Device Name", text: $deviceName)
                 }
 
                 if deviceType == .handy || deviceType == .oh {
-                    Section("Verbindung") {
-                        SecureField("Verbindungsschlüssel", text: $connectionKey)
+                    Section("Connection") {
+                        SecureField("Connection Key", text: $connectionKey)
 
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("So findest du deinen Verbindungsschlüssel:")
+                            Text("Here's how to find your connection key:")
                                 .font(.caption)
                                 .fontWeight(.semibold)
 
-                            Text("1. Öffne die \(deviceType.rawValue) App\n2. Gehe zu Einstellungen › Verbindungsschlüssel\n3. Kopiere den Schlüssel")
+                            Text("1. Open the \(deviceType.rawValue) App\n2. Go to Settings › Connection Key\n3. Copy the key")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
@@ -281,21 +270,25 @@ struct DeviceEditorSheet: View {
                     }
                 } else if deviceType == .intiface {
                     Section("Server") {
-                        TextField("WebSocket-Adresse", text: $serverAddress)
+                        TextField("WebSocket Address", text: $serverAddress)
                             .textInputAutocapitalization(.never)
                             .keyboardType(.URL)
                             .autocorrectionDisabled()
 
-                        Text("Standard: ws://127.0.0.1:12345")
+                        Text("Default: ws://127.0.0.1:12345")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
-                } else if deviceType == .lovespouse {
+                } else if deviceType == .lovespouse || deviceType == .ossm {
                     Section("Bluetooth") {
-                        Label("Direktverbindung via BLE", systemImage: "dot.radiowaves.left.and.right")
+                        Label("Direct connection via BLE", systemImage: "dot.radiowaves.left.and.right")
                             .foregroundColor(.accentColor)
 
-                        Text("Pleaco sendet BLE-Advertisement-Pakete direkt vom iPhone ans Toy – genau wie die offizielle App. Kein Gateway nötig. Die App muss dafür im Vordergrund laufen.")
+                        let helpText = deviceType == .lovespouse 
+                            ? "Pleaco sends BLE advertisement packets directly from the iPhone to the toy - just like the official app. No gateway needed. The app must run in the foreground."
+                            : "Pleaco connects directly to your OSSM over Bluetooth Low Energy. The device must be in Bluetooth mode."
+
+                        Text(helpText)
                             .font(.caption)
                             .foregroundColor(.secondary)
                             .padding(.vertical, 4)
@@ -310,7 +303,7 @@ struct DeviceEditorSheet: View {
                         } label: {
                             HStack {
                                 Spacer()
-                                Text("Gerät löschen")
+                                Text("Delete Device")
                                 Spacer()
                             }
                         }
@@ -327,14 +320,14 @@ struct DeviceEditorSheet: View {
                     serverAddress = device.serverAddress
                 }
             }
-            .navigationTitle(editingDevice == nil ? "Gerät hinzufügen" : "Gerät bearbeiten")
+            .navigationTitle(editingDevice == nil ? "Add Device" : "Edit Device")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Abbrechen") { dismiss() }
+                    Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Speichern") {
+                    Button("Save") {
                         saveDevice()
                     }
                     .disabled((deviceType == .handy || deviceType == .oh) && connectionKey.isEmpty)
