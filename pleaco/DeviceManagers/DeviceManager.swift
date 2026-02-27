@@ -177,6 +177,7 @@ class DeviceManager: ObservableObject {
 
     @Published var waveTime: Double = 0
     @Published var activeFunScript: FunScriptData? = nil
+    @Published var activeAudioTrack: SavedAudioTrack? = nil
     @Published var activeFunScriptId: UUID? = nil {
         didSet { UserDefaults.standard.set(activeFunScriptId?.uuidString, forKey: "activeFunScriptId") }
     }
@@ -200,6 +201,9 @@ class DeviceManager: ObservableObject {
     }
 
     var currentPatternName: String {
+        if let track = activeAudioTrack {
+            return track.name
+        }
         if activeDevice?.type == .lovespouse {
             let prog = selectedLoveSpouseProgram
             if prog > 0 {
@@ -462,7 +466,13 @@ class DeviceManager: ObservableObject {
         #endif
         
         ensureHardwareStarted()
-        startWaveTimer()
+        
+        if activeAudioTrack != nil {
+            // Audio mode: play the audio track concurrently
+            AudioManager.shared.play()
+        } else {
+            startWaveTimer()
+        }
     }
 
     private func ensureHardwareStarted() {
@@ -470,12 +480,19 @@ class DeviceManager: ObservableObject {
         
         switch device.type {
         case .handy, .oh:
-            handyManager.startHamp()
+            // Ensure hardware is ready to receive commands
+            // The slide range must be set first
             handyManager.setSlideRange(min: strokeMin, max: strokeMax)
+            handyManager.startHamp()
         case .intiface:
             break
         case .lovespouse:
-            loveSpouseManager.selectProgram(selectedLoveSpouseProgram)
+            if activeAudioTrack != nil {
+                // Must be 0 (manual mode) for Audio Sync to stream raw vibration levels
+                loveSpouseManager.selectProgram(0)
+            } else {
+                loveSpouseManager.selectProgram(selectedLoveSpouseProgram)
+            }
         case .ossm:
             ossmManager.setLevel(currentLevel)
         case .internal:
@@ -486,12 +503,14 @@ class DeviceManager: ObservableObject {
     func stop() {
         stopWaveTimer()
         isPlaying = false
-        waveTime = 0
-        funScriptPositionMs = 0
         
-        if activeDevice?.type == .lovespouse || activeDevice?.type == .ossm {
-            loveSpouseManager.stopAll()
-            ossmManager.stop()
+        if activeAudioTrack != nil {
+            AudioManager.shared.pause()
+        }
+        
+        if activeDevice?.type == .lovespouse {
+            // Re-select 0 to pause hardware pattern without disconnecting
+            loveSpouseManager.selectProgram(0)
         }
         
         #if os(iOS)
@@ -502,7 +521,6 @@ class DeviceManager: ObservableObject {
         
         handyManager.stopMotion()
         buttplugManager.stopAllDevices()
-        loveSpouseManager.stopAll()
         ossmManager.stop()
         hapticManager.stop()
     }
@@ -540,6 +558,10 @@ class DeviceManager: ObservableObject {
         selectedLoveSpouseProgram = 0 // Clear hardware program
         activeFunScript = nil
         activeFunScriptId = nil
+        if activeAudioTrack != nil {
+            AudioManager.shared.pause()
+            activeAudioTrack = nil
+        }
         selectedPreset = preset
 
         if !isPlaying {
@@ -561,6 +583,10 @@ class DeviceManager: ObservableObject {
 
     func applyFunScript(_ script: FunScriptData) {
         selectedLoveSpouseProgram = 0 // Clear hardware program
+        if activeAudioTrack != nil {
+            AudioManager.shared.pause()
+            activeAudioTrack = nil
+        }
         activeFunScript = FunScriptData(
             actions: script.actions.sorted { $0.at < $1.at },
             inverted: script.inverted,
@@ -574,8 +600,26 @@ class DeviceManager: ObservableObject {
         startWaveTimer()
     }
 
+    func applyAudioTrack(_ track: SavedAudioTrack) {
+        selectedLoveSpouseProgram = 0 // Clear hardware program
+        activeFunScript = nil
+        activeFunScriptId = nil
+        activeAudioTrack = track
+        
+        if !isPlaying { 
+            start() 
+        } else {
+            AudioManager.shared.play()
+        }
+        stopWaveTimer()
+    }
+
     func applyNamedFunScript(_ namedScript: NamedFunScript) {
         selectedLoveSpouseProgram = 0 // Clear hardware program
+        if activeAudioTrack != nil {
+            AudioManager.shared.pause()
+            activeAudioTrack = nil
+        }
         activeFunScript = namedScript.data
         activeFunScriptId = namedScript.id
         funScriptPositionMs = 0

@@ -11,7 +11,7 @@ struct PlayerView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 32) {
+            VStack(spacing: 20) {
                 artworkSection
 
                 infoSection
@@ -25,6 +25,7 @@ struct PlayerView: View {
                 strokeRangeSection
 
                 transportControls
+                    .padding(.top, 16) // A little extra breathing room before controls
 
                 Spacer(minLength: 40)
             }
@@ -64,7 +65,7 @@ struct PlayerView: View {
         }
         .aspectRatio(1, contentMode: .fit)
         .padding(.horizontal, 36)
-        .padding(.top, 20)
+        .padding(.top, 60)
         .shadow(color: .black.opacity(0.28), radius: 36, x: 0, y: 18)
     }
 

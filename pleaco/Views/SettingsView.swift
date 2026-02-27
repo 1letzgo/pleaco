@@ -8,26 +8,24 @@ struct SettingsView: View {
     @State private var deviceToEdit: SavedDevice? = nil
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 28) {
-                    devicesSection
+        ScrollView {
+            VStack(spacing: 28) {
+                devicesSection
 
-                    playbackSection
-                }
-                .padding(.top, 32)
-                .padding(.bottom, 60)
+                playbackSection
             }
-            .scrollClipDisabled()
-            .background(Color.surfacePrimary)
-            .sheet(isPresented: $showingAddEditor) {
-                DeviceEditorSheet(deviceManager: deviceManager, editingDevice: nil)
-                    .presentationDragIndicator(.visible)
-            }
-            .sheet(item: $deviceToEdit) { device in
-                DeviceEditorSheet(deviceManager: deviceManager, editingDevice: device)
-                    .presentationDragIndicator(.visible)
-            }
+            .padding(.top, 32)
+            .padding(.bottom, 60)
+        }
+        .scrollClipDisabled()
+        .background(Color.surfacePrimary)
+        .sheet(isPresented: $showingAddEditor) {
+            DeviceEditorSheet(deviceManager: deviceManager, editingDevice: nil)
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(item: $deviceToEdit) { device in
+            DeviceEditorSheet(deviceManager: deviceManager, editingDevice: device)
+                .presentationDragIndicator(.visible)
         }
     }
 

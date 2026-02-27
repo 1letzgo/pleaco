@@ -6,16 +6,34 @@
 import SwiftUI
 
 struct ContentView: View {
-    @State private var activeTab: AppTab = .control
-
-    enum AppTab {
-        case control, devices
-    }
+    @State private var selectedTab: Int = .init(0)
 
     var body: some View {
-        NavigationStack {
-            HomeView()
+        VStack(spacing: 0) {
+            // Custom Top Navigation Bar
+            CustomTopBar(selectedTab: $selectedTab)
+                .padding(.top, 8) // Optional safe area padding, depends on iOS version
+                .zIndex(1)
+
+            // Main Content Area
+            ZStack {
+                switch selectedTab {
+                case 0:
+                    HomeView()
+                        .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                case 1:
+                    AudioView()
+                        .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                case 2:
+                    SettingsView()
+                        .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                default:
+                    EmptyView()
+                }
+            }
+            .animation(.easeInOut(duration: 0.3), value: selectedTab)
         }
+        .background(Color.surfacePrimary.ignoresSafeArea())
         .tint(Color.appAccent)
     }
 }
