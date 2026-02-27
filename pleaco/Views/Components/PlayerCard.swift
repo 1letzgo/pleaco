@@ -18,10 +18,14 @@ struct PlayerCard: View {
 
     var body: some View {
         VStack(spacing: 0) { // This is the single root VStack
-            // Expansion Toggle (Top Right)
-            // Expansion Toggle (Top Right)
             HStack {
-                Spacer()
+                // Program Label (Left)
+                Text(deviceManager.currentPatternName)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.white.opacity(0.5))
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
                 if hasSliders {
                     Button {
                         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
@@ -30,19 +34,28 @@ struct PlayerCard: View {
                     } label: {
                         Image(systemName: "chevron.down")
                             .rotationEffect(.degrees(isExpanded ? 0 : 180))
-                            .font(.system(size: 14, weight: .bold))
+                            .font(.system(size: 11, weight: .bold))
                             .foregroundColor(.white.opacity(0.4))
-                            .padding(.vertical, 4)
-                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8) // Doubled from 4
+                            .padding(.horizontal, 12)
                             .background(Color.white.opacity(0.05))
                             .cornerRadius(8)
                     }
+                } else {
+                    Spacer()
                 }
+
+                // Device Label (Right)
+                Text(deviceManager.activeDevice?.name ?? "No Device")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.white.opacity(0.5))
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
             }
-            .frame(height: 20) // Consistent, compact height
+            .frame(height: 32) // Increased from 24
             .padding(.horizontal, 18)
-            .padding(.top, 10)
-            .padding(.bottom, 0)
+            .padding(.top, 8)
+            .padding(.bottom, 4)
             .zIndex(2)
 
             // 1-3. Collapsible Slider Section
@@ -208,15 +221,7 @@ struct PlayerCard: View {
             // 4. Persistent Control Row
             VStack(spacing: 0) {
                 HStack(alignment: .center) {
-                    // Program Label (Left)
-                    Text(deviceManager.currentPatternName)
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(.white)
-                        .lineLimit(1)
-                        .frame(width: 90, alignment: .leading)
-
                     Spacer()
-
                     // Transport (Center)
                     HStack(spacing: 24) {
                         Button { deviceManager.selectPreviousPattern() } label: {
@@ -231,24 +236,25 @@ struct PlayerCard: View {
                             else { deviceManager.start() }
                         } label: {
                             ZStack {
-                                Circle()
+                                RoundedRectangle(cornerRadius: 16)
                                     .fill(Color.white.opacity(0.2))
-                                    .frame(width: 78, height: 78)
-                                    .scaleEffect(deviceManager.isPlaying ? 1.0 : 0.8)
+                                    .frame(width: 144, height: 72)
+                                    .scaleEffect(deviceManager.isPlaying ? 1.0 : 0.9)
                                     .animation(deviceManager.isPlaying ? .easeInOut(duration: 1.0).repeatForever(autoreverses: true) : .easeOut(duration: 0.2), value: deviceManager.isPlaying)
 
-                                Circle()
+                                RoundedRectangle(cornerRadius: 14)
                                     .fill(Color.white)
-                                    .frame(width: 66, height: 66)
+                                    .frame(width: 132, height: 60)
                                     .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
 
                                 Image(systemName: deviceManager.isPlaying ? "pause.fill" : "play.fill")
-                                    .font(.system(size: 26, weight: .bold))
+                                    .font(.system(size: 24, weight: .bold))
                                     .foregroundColor(Color.appAccent)
                             }
                         }
                         .buttonStyle(.plain)
                         .opacity(deviceManager.activeDevice?.isConnected == true ? 1 : 0.6)
+                        .disabled(deviceManager.activeDevice?.isConnected != true)
 
                         Button { deviceManager.selectNextPattern() } label: {
                             Image(systemName: "forward.fill")
@@ -257,18 +263,11 @@ struct PlayerCard: View {
                         }
                         .buttonStyle(.plain)
                     }
-
                     Spacer()
-
-                    // Device Label (Right)
-                    Text(deviceManager.activeDevice?.name ?? "No Device")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(.white)
-                        .lineLimit(1)
-                        .frame(width: 90, alignment: .trailing)
                 }
                 .padding(.horizontal, 18)
-                .padding(.bottom, 12)
+                .padding(.bottom, 6)
+                .padding(.top, 12) // Push them down a bit more
             }
             .background(Color.footerBackground)
             .zIndex(1)

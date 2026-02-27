@@ -33,6 +33,11 @@ class AudioManager: ObservableObject {
     private let analysisQueue = DispatchQueue(label: "com.pleaco.audioAnalysis")
     private var theRms: Float = 0.0
     private var timeObserverTimer: Timer?
+    
+    // Per-channel LPF state
+    private var filterState: [Float] = [0, 0] // Supports stereo
+    private var smoothedIntensity: Double = 0
+    private var peakRms: Float = 0.05 // Baseline peak for AGC
 
     private let fileManager = FileManager.default
     private var audioDirectoryURL: URL {
@@ -48,6 +53,8 @@ class AudioManager: ObservableObject {
         // 230ms delay to offset Bluetooth latency for Toys
         delayNode.delayTime = 0.23
         delayNode.wetDryMix = 100 // 100% wet, so audio is fully delayed
+        delayNode.feedback = 0    // CRITICAL: No echo/reverb
+        delayNode.lowPassCutoff = 22000 // Ensure full transparency
 
         engine.attach(playerNode)
         engine.attach(delayNode)
@@ -280,50 +287,69 @@ class AudioManager: ObservableObject {
     private func processBuffer(_ buffer: AVAudioPCMBuffer) {
         guard let channelData = buffer.floatChannelData else { return }
         
-        // Calculate Root Mean Square (RMS) for amplitude
         let channelCount = Int(buffer.format.channelCount)
         let frameLength = Int(buffer.frameLength)
+        let sampleRate = Float(buffer.format.sampleRate)
+        
+        // Low Pass Filter Calculation (Target: ~100Hz for cleaner kick drums)
+        let cutoff: Float = 100.0
+        let dt = 1.0 / sampleRate
+        let rc = 1.0 / (2.0 * .pi * cutoff)
+        let alpha = dt / (rc + dt)
+        let oneMinusAlpha = 1.0 - alpha
+
         var sumSquares: Float = 0.0
 
-        for channel in 0..<channelCount {
+        for channel in 0..<min(channelCount, 2) {
             let data = channelData[channel]
+            var lastY = filterState[channel]
+            
             for frame in 0..<frameLength {
-                let sample = data[frame]
-                sumSquares += sample * sample
+                let x = data[frame]
+                let y = alpha * x + oneMinusAlpha * lastY
+                sumSquares += y * y
+                lastY = y
             }
+            filterState[channel] = lastY
         }
 
-        let totalSamples = Float(channelCount * frameLength)
+        let totalSamples = Float(min(channelCount, 2) * frameLength)
         let rms = sqrt(sumSquares / totalSamples)
-        
         self.theRms = rms
 
-        // Map RMS (usually 0.0 to ~0.3 in typical music) to 0.0-100.0 intensity
-        // We use the 'sensitivity' modifier to allow user tuning
-        
-        let sensitivityMultiplier = Float(self.sensitivity) / 50.0 // 1.0 at 50% slider
-        
-        // Boost factor: Multiply the Raw RMS to get to a 0-100 scale.
-        // E.g. raw RMS of 0.2 * 300 = 60
-        let boostFactor: Float = 400.0
-        var intensity = Double(rms * boostFactor * sensitivityMultiplier)
-        
-        // Cap it
-        intensity = min(DeviceManager.shared.audioIntensity, max(0.0, intensity))
-        
-        // A little threshold smoothing - don't vibrate for tiny background hiss
-        if intensity < 5.0 {
-            intensity = 0.0
+        // Peak Tracking (Auto-Gain Control)
+        // Fast attack, slow decay (approx 5-10 seconds to decay fully)
+        if rms > peakRms {
+            peakRms = rms // Instant attack
+        } else {
+            peakRms = (peakRms * 0.9995) + (rms * 0.0005) // Slow decay
         }
+        
+        // Ensure peakRms doesn't get too small (silence floor)
+        peakRms = max(peakRms, 0.01)
+
+        // Map RMS to intensity relative to peak
+        let sensitivityMultiplier = Float(self.sensitivity) / 50.0
+        
+        // Dynamic Scaling: current RMS / current Peak * 100
+        var targetIntensity = Double((rms / peakRms) * 100.0 * sensitivityMultiplier)
+        
+        // Noise Gate
+        if targetIntensity < 15.0 {
+            targetIntensity = 0.0
+        }
+        
+        // Smoothing (Attack/Release)
+        // Rock music needs faster response to be rhythmic
+        let smoothAlpha = targetIntensity > smoothedIntensity ? 0.4 : 0.15
+        smoothedIntensity = (targetIntensity * smoothAlpha) + (smoothedIntensity * (1.0 - smoothAlpha))
+        
+        // Cap it at user's master audio intensity
+        let finalIntensity = min(DeviceManager.shared.audioIntensity, max(0.0, smoothedIntensity))
 
         DispatchQueue.main.async {
-            self.currentAmplitude = intensity
-            
-            // Send to the devices immediately!
-            // Note: Since this block triggers very frequently (e.g., ~40 times a second),
-            // The DeviceManager's internal throttling (e.g. HandyManager/OSSMManager deduplication)
-            // handles filtering out spam to BLE hardware.
-            DeviceManager.shared.setLevel(intensity)
+            self.currentAmplitude = finalIntensity
+            DeviceManager.shared.setLevel(finalIntensity)
         }
     }
 
