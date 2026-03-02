@@ -9,6 +9,7 @@ import UniformTypeIdentifiers
 struct HomeView: View {
     @ObservedObject var deviceManager = DeviceManager.shared
     @ObservedObject var loveSpouseManager = LoveSpouseManager.shared
+    @ObservedObject var ossmManager = OSSMManager.shared
 
     var body: some View {
         ScrollView {
@@ -39,7 +40,7 @@ struct HomeView: View {
 
     private var patternsSection: some View {
         Group {
-            // 1. Hardware Programs (LoveSpouse only)
+            // 1. LoveSpouse Hardware Programs
             if deviceManager.activeDevice?.type == .lovespouse {
                 VStack(alignment: .leading, spacing: 12) {
                     SectionHeader(title: "Device Programs", icon: "cpu")
@@ -63,20 +64,22 @@ struct HomeView: View {
                 }
             }
             
-            // 2. Internal / App Patterns (Global)
-            VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "App Patterns", icon: "square.grid.3x3.fill")
-                
-                let columns = Array(repeating: GridItem(.flexible(), spacing: 12), count: 3)
-                LazyVGrid(columns: columns, spacing: 12) {
-                    ForEach(DeviceWavePreset.allCases) { preset in
-                        PatternCard(
-                            title: preset.displayName,
-                            curvePoints: [],
-                            systemIcon: preset.icon,
-                            isSelected: deviceManager.selectedPreset == preset
-                        ) {
-                            deviceManager.applyPreset(preset)
+            // 2. OSSM Hardware Programs
+            if deviceManager.activeDevice?.type == .ossm && !ossmManager.availablePatterns.isEmpty {
+                VStack(alignment: .leading, spacing: 12) {
+                    SectionHeader(title: "OSSM Programs", icon: "cpu.fill")
+                    
+                    let columns = Array(repeating: GridItem(.flexible(), spacing: 12), count: 3)
+                    LazyVGrid(columns: columns, spacing: 12) {
+                        ForEach(Array(ossmManager.availablePatterns.enumerated()), id: \.offset) { index, name in
+                            PatternCard(
+                                title: name,
+                                curvePoints: [],
+                                systemIcon: "bolt.fill",
+                                isSelected: ossmManager.deviceState == "pattern" && ossmManager.lastRequestedDescriptionIndex == index // Approximate check
+                            ) {
+                                ossmManager.setPattern(index)
+                            }
                         }
                     }
                 }

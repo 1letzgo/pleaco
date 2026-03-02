@@ -25,6 +25,7 @@ class OSSMManager: NSObject, ObservableObject {
     @Published var isReady: Bool = false
     @Published var deviceState: String = "idle"
     @Published var availablePatterns: [String] = []
+    @Published var lastRequestedDescriptionIndex: Int?
     @Published var patternDescriptions: [Int: String] = [:]
     
     // Stroker mode: syncs depth and stroke length
@@ -39,7 +40,6 @@ class OSSMManager: NSObject, ObservableObject {
     
     private var connectionCompletion: ((Bool) -> Void)?
     private var lastState: String = ""
-    private var lastRequestedDescriptionIndex: Int?
     
     // Throttling state to prevent BLE flood
     private var lastSentSpeed: Int?

@@ -72,7 +72,7 @@ struct OSSMControlView: View {
             HStack {
                 Label("Stroker Mode", systemImage: "link")
                     .font(.headline.weight(.semibold))
-                    .foregroundColor(.white.opacity(0.9))
+                    .foregroundColor(Color.appAccent)
                 
                 Spacer()
                 
