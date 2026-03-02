@@ -67,8 +67,7 @@ struct RemoteView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(Color.appAccent)
+            .buttonStyle(ProminentButtonStyle())
 
             Text("or")
                 .font(.caption)
@@ -96,8 +95,7 @@ struct RemoteView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(Color.appAccent)
+            .buttonStyle(ProminentButtonStyle())
             .disabled(joinCode.count != 6)
         }
     }
@@ -185,7 +183,7 @@ struct RemoteView: View {
             .appCardStyle()
 
             // Disconnect
-            Button(role: .destructive) {
+            Button {
                 remote.disconnect()
             } label: {
                 HStack {
@@ -195,21 +193,19 @@ struct RemoteView: View {
                 }
                 .frame(maxWidth: .infinity, minHeight: cardHeight)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(SecondaryButtonStyle(isDestructive: true))
         }
     }
 
     // MARK: - Shared Components
 
     private var cancelButton: some View {
-        Button(role: .destructive) {
+        Button {
             remote.disconnect()
         } label: {
             Text("Cancel")
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(SecondaryButtonStyle(isDestructive: true))
     }
 
     private var serverConfigToggle: some View {

@@ -14,7 +14,11 @@ struct HomeView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 // 1. Manual Touch Control
-                TouchControlView()
+                if deviceManager.activeDevice?.type == .ossm {
+                    OSSMControlView()
+                } else {
+                    TouchControlView()
+                }
 
                 // 2. Device Programs
                 patternsSection
@@ -43,7 +47,6 @@ struct HomeView: View {
                     let columns = Array(repeating: GridItem(.flexible(), spacing: 12), count: 3)
                     LazyVGrid(columns: columns, spacing: 12) {
                         ForEach(1...9, id: \.self) { index in
-                            let isSpeed = index <= 3
                             let title = index <= 9 ? patternName(index) : "Pattern \(index - 3)"
                             let icon = patternIcon(index)
                             
@@ -55,6 +58,25 @@ struct HomeView: View {
                             ) {
                                 deviceManager.selectLoveSpouseProgram(index)
                             }
+                        }
+                    }
+                }
+            }
+            
+            // 2. Internal / App Patterns (Global)
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "App Patterns", icon: "square.grid.3x3.fill")
+                
+                let columns = Array(repeating: GridItem(.flexible(), spacing: 12), count: 3)
+                LazyVGrid(columns: columns, spacing: 12) {
+                    ForEach(DeviceWavePreset.allCases) { preset in
+                        PatternCard(
+                            title: preset.displayName,
+                            curvePoints: [],
+                            systemIcon: preset.icon,
+                            isSelected: deviceManager.selectedPreset == preset
+                        ) {
+                            deviceManager.applyPreset(preset)
                         }
                     }
                 }

@@ -64,6 +64,36 @@ enum DeviceWavePreset: String, CaseIterable, Identifiable, Codable {
 
     var displayName: String { rawValue }
     
+    var icon: String {
+        switch self {
+        case .sine75:     return "waveform"
+        case .foreplay:   return "heart.fill"
+        case .texture:    return "circle.grid.3x3.fill"
+        case .build1:     return "slowmo"
+        case .build2:     return "bolt.ring.closed"
+        case .build3:     return "flame.fill"
+        case .climax1:    return "crown.fill"
+        case .climax2:    return "mountain.2.fill"
+        case .aftercare:  return "leaf.fill"
+        case .pulse:      return "dot.radiowaves.left.and.right"
+        case .fastPulse:  return "hare.fill"
+        case .wave:       return "water.waves"
+        case .slowWave:   return "water.waves"
+        case .ramp:       return "waveform.path.ecg"
+        case .heartbeat:  return "heart.circle.fill"
+        case .chaos:      return "shuffle"
+        case .tease:      return "hand.raised.fill"
+        case .surge:      return "bolt.fill"
+        case .bounce:     return "arrow.up.and.down.circle.fill"
+        case .breathe:    return "lungs.fill"
+        case .staccato:   return "circle.dotted"
+        case .thunder:    return "cloud.bolt.fill"
+        case .climb:      return "chart.line.uptrend.xyaxis"
+        case .ocean:      return "drop.fill"
+        case .earthquake: return "waveform.path.ecg.rectangle"
+        }
+    }
+    
     var shortName: String { rawValue }
 }
 
@@ -150,6 +180,24 @@ class DeviceManager: ObservableObject {
     
     @Published var isManualControlActive: Bool = false
     
+    @Published var ossmStroke: Double = 50 {
+        didSet {
+            UserDefaults.standard.set(ossmStroke, forKey: "ossmStroke")
+            if isPlaying && activeDevice?.type == .ossm {
+                ossmManager.setStroke(ossmStroke)
+            }
+        }
+    }
+    
+    @Published var ossmDepth: Double = 50 {
+        didSet {
+            UserDefaults.standard.set(ossmDepth, forKey: "ossmDepth")
+            if isPlaying && activeDevice?.type == .ossm {
+                ossmManager.setDepth(ossmDepth)
+            }
+        }
+    }
+
     @Published var ossmSensation: Double = 50 {
         didSet {
             UserDefaults.standard.set(ossmSensation, forKey: "ossmSensation")
@@ -251,6 +299,19 @@ class DeviceManager: ObservableObject {
         restoreActiveDevice()
         setupConnectionMonitoring()
         setupDeviceObservation()
+        
+        // Restore manual intensity
+        self.masterIntensity = UserDefaults.standard.double(forKey: "masterIntensity")
+        if self.masterIntensity == 0 { self.masterIntensity = 50 }
+        
+        // Restore OSSM values
+        self.ossmStroke = UserDefaults.standard.object(forKey: "ossmStroke") as? Double ?? 50
+        self.ossmDepth = UserDefaults.standard.object(forKey: "ossmDepth") as? Double ?? 50
+        self.ossmSensation = UserDefaults.standard.object(forKey: "ossmSensation") as? Double ?? 50
+        self.ossmStrokerMode = UserDefaults.standard.bool(forKey: "ossmStrokerMode")
+        
+        // Push initial StrokerMode state to manager
+        ossmManager.strokerMode = ossmStrokerMode
     }
 
     private func setupDeviceObservation() {
