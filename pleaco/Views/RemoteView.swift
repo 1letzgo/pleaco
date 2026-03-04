@@ -226,7 +226,7 @@ struct RemoteView: View {
             .buttonStyle(.plain)
 
             if showServerConfig {
-                TextField("ws://192.168.188.33:8080", text: $remote.serverAddress)
+                TextField("wss://pleaco.shelf.am", text: $remote.serverAddress)
                     .font(.system(size: 14, design: .monospaced))
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()

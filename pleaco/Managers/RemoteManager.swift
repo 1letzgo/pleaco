@@ -50,7 +50,7 @@ class RemoteManager: ObservableObject {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 10.0
         session = URLSession(configuration: config)
-        serverAddress = UserDefaults.standard.string(forKey: "remoteServerAddress") ?? "ws://192.168.188.33:8080"
+        serverAddress = UserDefaults.standard.string(forKey: "remoteServerAddress") ?? "wss://pleaco.shelf.am"
     }
 
     // MARK: - Host Session
