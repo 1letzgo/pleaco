@@ -41,8 +41,8 @@ struct DevicesView: View {
                     HStack(spacing: 4) {
                         Image(systemName: "plus.circle.fill")
                         Text("Add")
+                            .font(.headline.weight(.semibold))
                     }
-                    .font(.headline.weight(.semibold))
                     .foregroundColor(Color.appAccent)
                 }
             }
@@ -82,9 +82,7 @@ struct SettingsSectionCard<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label(title, systemImage: icon)
-                .font(.headline.weight(.semibold))
-                .foregroundColor(Color.appAccent.opacity(0.9))
+            SectionHeader(title: title, icon: icon)
                 .padding(.horizontal, 4)
 
             content

@@ -7,9 +7,14 @@ struct SectionHeader: View {
     let icon: String
 
     var body: some View {
-        Label(title, systemImage: icon)
-            .font(.headline.weight(.semibold))
-            .foregroundColor(Color.appAccent.opacity(0.9))
+        Label {
+            Text(title.uppercased())
+                .tracking(1.2)
+        } icon: {
+            Image(systemName: icon)
+        }
+        .font(.system(size: 13, weight: .bold))
+        .foregroundColor(Color.appAccent.opacity(0.8))
     }
 }
 
@@ -21,17 +26,17 @@ struct AppCardModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .background(
-                RoundedRectangle(cornerRadius: 22)
+                RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
                     .fill(isSelected ? AnyShapeStyle(LinearGradient.accentGradient) : AnyShapeStyle(Color.cardBackground))
             )
             .overlay(
                 LinearGradient.cardGradient
-                    .clipShape(RoundedRectangle(cornerRadius: 22))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.cardCornerRadius))
                     .opacity(isSelected ? 1 : 0)
                     .allowsHitTesting(false)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 22)
+                RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
                     .strokeBorder(
                         isSelected ? Color.white.opacity(0.12) : Color.subtleBorder,
                         lineWidth: 0.5

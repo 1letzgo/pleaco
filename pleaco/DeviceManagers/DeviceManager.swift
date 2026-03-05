@@ -40,7 +40,9 @@ enum DeviceType: String, CaseIterable, Identifiable, Codable {
 }
 
 enum DeviceWavePreset: String, CaseIterable, Identifiable, Codable {
-    case sine75 = "Steady"          // was "Sine 75Hz" — constant intensity baseline
+    case low = "Low"
+    case medium = "Medium"
+    case high = "High"
     case foreplay = "Foreplay"
     case texture = "Texture"
     case build1 = "Throb"           // was "Build 1 (Slow Pulse)" — fixed waveform
@@ -72,7 +74,7 @@ enum DeviceWavePreset: String, CaseIterable, Identifiable, Codable {
     
     var icon: String {
         switch self {
-        case .sine75:     return "waveform"
+        case .low, .medium, .high: return "speedometer"
         case .foreplay:   return "heart.fill"
         case .texture:    return "circle.grid.3x3.fill"
         case .build1:     return "slowmo"
@@ -237,6 +239,18 @@ class DeviceManager: ObservableObject {
     var ossmManager = OSSMManager.shared
     private var hapticManager = HapticManager.shared
 
+    private var shouldSilenceLocalHardware: Bool {
+        return RemoteManager.shared.state == .connected && 
+               RemoteManager.shared.role == .sender && 
+               !RemoteManager.shared.isApplyingRemoteLevel
+    }
+
+    private var shouldIgnoreLocalUI: Bool {
+        return RemoteManager.shared.state == .connected && 
+               RemoteManager.shared.role == .receiver && 
+               !RemoteManager.shared.isApplyingRemoteLevel
+    }
+
     @Published var waveTime: Double = 0
     @Published var activeFunScript: FunScriptData? = nil
     @Published var activeAudioTrack: SavedAudioTrack? = nil
@@ -253,9 +267,12 @@ class DeviceManager: ObservableObject {
     }
 
     private var waveTimer: Timer?
-    private var connectionSubscription: AnyCancellable?
+
     private var loveSpouseSubscription: AnyCancellable?
     private var ossmSubscription: AnyCancellable?
+    private var remoteWatchdogTimer: Timer?
+    private var cancellables = Set<AnyCancellable>()
+    private var lastLoveSpouseLevel: Double = -1
 
     var activeDevice: SavedDevice? {
         guard let id = activeDeviceId else { return nil }
@@ -351,16 +368,8 @@ class DeviceManager: ObservableObject {
     }
 
     private func setupConnectionMonitoring() {
-        connectionSubscription = self.objectWillChange
-            .debounce(for: .milliseconds(100), scheduler: RunLoop.main)
-            .sink { [weak self] _ in
-                guard let self = self, self.isPlaying else { return }
-                if let device = self.activeDevice, device.isConnected {
-                    // If we are playing but hardware hasn't started yet because it was offline
-                    self.ensureHardwareStarted()
-                }
-            }
-        
+        // Obsolete: We handle connection state changes explicitly when devices report readiness
+
         // Reactive observer for LoveSpouse readiness
         loveSpouseSubscription = loveSpouseManager.$isConnected
             .receive(on: RunLoop.main)
@@ -371,6 +380,9 @@ class DeviceManager: ObservableObject {
                         device.isConnected = isConnected
                         self.objectWillChange.send()
                         NSLog("🔔 DeviceManager: LoveSpouse reactive sync – Connected: \(isConnected)")
+                        if isConnected && self.isPlaying {
+                            self.ensureHardwareStarted()
+                        }
                     }
                 }
             }
@@ -385,9 +397,70 @@ class DeviceManager: ObservableObject {
                         device.isConnected = isReady
                         self.objectWillChange.send()
                         NSLog("🔔 DeviceManager: OSSM reactive sync – Ready: \(isReady)")
+                        if isReady && self.isPlaying {
+                            self.ensureHardwareStarted()
+                        }
                     }
                 }
             }
+        
+        // Handshake: When connecting, send our active device info to partner
+        RemoteManager.shared.$state
+            .receive(on: RunLoop.main)
+            .sink { [weak self] state in
+                guard let self = self, state == .connected else { return }
+                let deviceName = self.activeDevice?.name ?? "No Device"
+                RemoteManager.shared.sendHandshake(device: deviceName)
+            }
+            .store(in: &cancellables)
+        
+        // Watchdog: If we are receiver and don't get a signal for 2.5s, stop hardware.
+        // We use signalPulse instead of incomingLevel to ensure it fires even for same values.
+        RemoteManager.shared.signalPulse
+            .receive(on: RunLoop.main)
+            .sink { [weak self] in
+                guard let self = self else { return }
+                if RemoteManager.shared.state == .connected && RemoteManager.shared.role == .receiver {
+                    self.resetRemoteWatchdog()
+                }
+            }
+            .store(in: &cancellables)
+    }
+
+    private func resetRemoteWatchdog() {
+        remoteWatchdogTimer?.invalidate()
+        remoteWatchdogTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: false) { [weak self] _ in
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                if RemoteManager.shared.state == .connected && RemoteManager.shared.role == .receiver && self.isPlaying {
+                    NSLog("⚠️ Remote Watchdog: Signal lost (timeout 2.5s), stopping device.")
+                    self.stop()
+                }
+            }
+        }
+    }
+
+    // Sender Heartbeat: Keep partner alive by re-sending level every 400ms
+    private var senderHeartbeatTimer: Timer?
+
+    private func startRemoteHeartbeat() {
+        guard senderHeartbeatTimer == nil else { return }
+        senderHeartbeatTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { [weak self] _ in
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                if RemoteManager.shared.state == .connected && 
+                   RemoteManager.shared.role != .receiver && 
+                   self.isPlaying &&
+                   !RemoteManager.shared.isApplyingRemoteLevel {
+                    RemoteManager.shared.sendLevel(self.currentLevel)
+                }
+            }
+        }
+    }
+
+    private func stopRemoteHeartbeat() {
+        senderHeartbeatTimer?.invalidate()
+        senderHeartbeatTimer = nil
     }
 
     // MARK: - Device Management
@@ -521,7 +594,11 @@ class DeviceManager: ObservableObject {
     // MARK: - Playback
 
     func start() {
+        if shouldIgnoreLocalUI { return }
         guard !isPlaying else { return }
+
+        // Start heartbeat if we are sender/dual to keep partner alive
+        startRemoteHeartbeat()
 
         // If a device is selected but not connected, and no audio is playing, we shouldn't start.
         if let device = activeDevice, !device.isConnected && activeAudioTrack == nil {
@@ -566,6 +643,8 @@ class DeviceManager: ObservableObject {
     private func ensureHardwareStarted() {
         guard isPlaying, let device = activeDevice, device.isConnected else { return }
         
+        if shouldSilenceLocalHardware { return }
+
         switch device.type {
         case .handy, .oh:
             // Ensure hardware is ready to receive commands
@@ -585,6 +664,9 @@ class DeviceManager: ObservableObject {
                 loveSpouseManager.selectProgram(selectedLoveSpouseProgram)
             }
         case .ossm:
+            ossmManager.setDepth(ossmDepth)
+            ossmManager.setStroke(ossmStroke)
+            ossmManager.setSensation(ossmSensation)
             ossmManager.setLevel(currentLevel)
         case .internal:
             hapticManager.start()
@@ -592,6 +674,9 @@ class DeviceManager: ObservableObject {
     }
 
     func stop() {
+        if shouldIgnoreLocalUI { return }
+        
+        stopRemoteHeartbeat()
         stopWaveTimer()
         isManualControlActive = false
         isPlaying = false
@@ -616,6 +701,8 @@ class DeviceManager: ObservableObject {
         }
         #endif
         
+        NSLog("🛑 DeviceManager: STOP called (isPlaying: \(isPlaying))")
+        
         handyManager.stopMotion()
         buttplugManager.stopAllDevices()
         ossmManager.stop()
@@ -623,11 +710,15 @@ class DeviceManager: ObservableObject {
     }
 
     func setLevel(_ level: Double) {
+        if shouldIgnoreLocalUI { return }
+        
         currentLevel = level
         sendLevel(level)
     }
 
     func setStrokeRange(min: Double, max: Double) {
+        if shouldIgnoreLocalUI { return }
+        
         let clampedMin = Swift.min(100.0, Swift.max(0.0, min))
         let clampedMax = Swift.min(100.0, Swift.max(0.0, max))
 
@@ -639,6 +730,8 @@ class DeviceManager: ObservableObject {
             strokeMax = clampedMax
         }
 
+        if shouldSilenceLocalHardware { return }
+
         handyManager.setSlideRange(min: strokeMin, max: strokeMax)
 
         if activeDevice?.type == .ossm {
@@ -647,6 +740,8 @@ class DeviceManager: ObservableObject {
         }
     }
     func applyPreset(_ preset: DeviceWavePreset) {
+        if shouldIgnoreLocalUI { return }
+        
         clearAllPrograms(except: .preset)
         selectedPreset = preset
 
@@ -673,6 +768,8 @@ class DeviceManager: ObservableObject {
     // MARK: - FunScript
 
     func applyFunScript(_ script: FunScriptData) {
+        if shouldIgnoreLocalUI { return }
+        
         clearAllPrograms(except: .script)
         activeFunScript = FunScriptData(
             actions: script.actions.sorted { $0.at < $1.at },
@@ -692,6 +789,8 @@ class DeviceManager: ObservableObject {
     }
 
     func applyAudioTrack(_ track: SavedAudioTrack) {
+        if shouldIgnoreLocalUI { return }
+        
         clearAllPrograms(except: .audio)
 
         activeAudioTrack = track
@@ -714,6 +813,8 @@ class DeviceManager: ObservableObject {
     }
 
     func applyNamedFunScript(_ namedScript: NamedFunScript) {
+        if shouldIgnoreLocalUI { return }
+        
         clearAllPrograms(except: .script)
         activeFunScript = namedScript.data
         activeFunScriptId = namedScript.id
@@ -753,6 +854,8 @@ class DeviceManager: ObservableObject {
     // MARK: - Pattern Navigation
 
     func selectLoveSpouseProgram(_ index: Int) {
+        if shouldIgnoreLocalUI { return }
+        
         guard activeDevice?.type == .lovespouse || activeDevice?.type == .ossm else { return }
 
         clearAllPrograms(except: .hardware)
@@ -760,6 +863,18 @@ class DeviceManager: ObservableObject {
 
         if index > 0 {
             isPlaying = true
+            
+            // Forward to remote partner
+            if RemoteManager.shared.state == .connected && !RemoteManager.shared.isApplyingRemoteLevel {
+                RemoteManager.shared.sendProgram(index)
+            }
+            
+            // Silence local hardware if in Sender role
+            if shouldSilenceLocalHardware {
+                objectWillChange.send()
+                return
+            }
+
             if activeDevice?.type == .lovespouse {
                 loveSpouseManager.selectProgram(index)
             } else if activeDevice?.type == .ossm {
@@ -771,12 +886,18 @@ class DeviceManager: ObservableObject {
             }
             #endif
         } else { // index == 0
+            // Forward stop to remote partner if index is 0
+            if RemoteManager.shared.state == .connected && !RemoteManager.shared.isApplyingRemoteLevel {
+                RemoteManager.shared.sendStop()
+            }
             stop()
         }
         objectWillChange.send()
     }
 
     func selectNextPattern() {
+        if shouldIgnoreLocalUI { return }
+        
         if activeAudioTrack != nil {
             AudioManager.shared.playNext()
             return
@@ -793,7 +914,7 @@ class DeviceManager: ObservableObject {
             } else {
                 // End of LS Programs -> Move to first Software Preset
                 selectedLoveSpouseProgram = 0
-                applyPreset(presets.first ?? .sine75)
+                applyPreset(presets.first ?? .low)
             }
             return
         }
@@ -833,10 +954,12 @@ class DeviceManager: ObservableObject {
 
         // Fallback
         if isLS || isOSSM { selectLoveSpouseProgram(1) }
-        else { applyPreset(presets.first ?? .sine75) }
+        else { applyPreset(presets.first ?? .low) }
     }
 
     func selectPreviousPattern() {
+        if shouldIgnoreLocalUI { return }
+        
         if activeAudioTrack != nil {
             AudioManager.shared.playPrevious()
             return
@@ -857,7 +980,7 @@ class DeviceManager: ObservableObject {
             } else {
                 // Start of LS Programs (no scripts) -> Move to last Software Preset
                 selectedLoveSpouseProgram = 0
-                applyPreset(presets.last ?? .sine75)
+                applyPreset(presets.last ?? .low)
             }
             return
         }
@@ -875,7 +998,7 @@ class DeviceManager: ObservableObject {
                     applyNamedFunScript(customScripts.last!)
                 } else {
                     // Loop back to last Preset
-                    applyPreset(presets.last ?? .sine75)
+                    applyPreset(presets.last ?? .low)
                 }
                 return
             }
@@ -887,14 +1010,14 @@ class DeviceManager: ObservableObject {
                 applyNamedFunScript(customScripts[idx - 1])
             } else {
                 // Start of Scripts -> Back to last Software Preset
-                applyPreset(presets.last ?? .sine75)
+                applyPreset(presets.last ?? .low)
             }
             return
         }
 
         // Fallback
         if isLS || isOSSM { selectLoveSpouseProgram(9) }
-        else { applyPreset(presets.last ?? .sine75) }
+        else { applyPreset(presets.last ?? .low) }
     }
 
     // MARK: - Wave Pattern Engine
@@ -906,7 +1029,7 @@ class DeviceManager: ObservableObject {
             if activeDevice?.type == .handy || activeDevice?.type == .oh || activeDevice?.type == .ossm {
                 fsInterval = 0.1
             } else if activeDevice?.type == .lovespouse {
-                fsInterval = 0.2 // Throttle to 5Hz to avoid BLE cancel-loop
+                fsInterval = 0.1
             } else {
                 fsInterval = 0.02
             }
@@ -941,7 +1064,7 @@ class DeviceManager: ObservableObject {
         if activeDevice?.type == .handy || activeDevice?.type == .oh || activeDevice?.type == .ossm {
             interval = max(0.1, interval)
         } else if activeDevice?.type == .lovespouse {
-            interval = max(0.2, interval) // Throttle to 5Hz
+            interval = max(0.1, interval) // Resolution restored, hardware still protected in sendLevel
         }
 
         waveTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
@@ -974,10 +1097,22 @@ class DeviceManager: ObservableObject {
     }
 
     func sendLevel(_ level: Double) {
+        // Persist the level so heartbeat can pick it up
+        self.currentLevel = level
+
         // Forward to remote partner if connected (skip if this level came from remote — prevents echo)
         if RemoteManager.shared.state == .connected && !RemoteManager.shared.isApplyingRemoteLevel {
+            // NSLog("📡 DeviceManager: Sending Level \(level) to Remote")
             RemoteManager.shared.sendLevel(level)
+            startRemoteHeartbeat()
+
+            // If we are a sender, we stop here to keep local hardware silent
+            if shouldSilenceLocalHardware {
+                return
+            }
         }
+        
+        // NSLog("🔌 DeviceManager: Updating Local Hardware – Level: \(level)")
 
         guard let device = activeDevice, device.isConnected else { return }
 
@@ -997,13 +1132,19 @@ class DeviceManager: ObservableObject {
         case .intiface:
             buttplugManager.setLevel(level)
         case .lovespouse:
-            loveSpouseManager.setLevel(level)
+            // Deduplicate significantly: Only let through if the hardware program index would change.
+            // LoveSpouse hardware is 'set and forget', excessive signaling disrupts the motor.
+            let targetProg: Int = level == 0 ? 0 : (level < 34 ? 1 : (level < 67 ? 2 : 3))
+            if targetProg != loveSpouseManager.activeProgram || (level == 0 && loveSpouseManager.activeProgram != 0) {
+                loveSpouseManager.setLevel(level)
+            }
         case .ossm:
             ossmManager.setLevel(level)
         case .internal:
             hapticManager.updateIntensity(level)
         }
     }
+
 
     func applyManualControl() {
         if !isManualControlActive {
@@ -1048,7 +1189,7 @@ class DeviceManager: ObservableObject {
     private func timerInterval(for preset: DeviceWavePreset?) -> TimeInterval {
         guard let preset = preset else { return 1.0 }
         switch preset {
-        case .sine75:     return 0.1
+        case .low, .medium, .high: return 0.2
         case .foreplay:   return 0.05
         case .texture:    return 0.05
         case .build1:     return 0.02   // Throb — smooth 1s cycle needs fine sampling
@@ -1079,7 +1220,11 @@ class DeviceManager: ObservableObject {
     private func calculateWaveValue(time: Double) -> Double {
         guard let preset = selectedPreset else { return 0.0 }
         switch preset {
-        case .sine75:
+        case .low:
+            return 0.3
+        case .medium:
+            return 0.6
+        case .high:
             return 1.0
         case .foreplay:
             // 1s duration, rolling swell (~1Hz)

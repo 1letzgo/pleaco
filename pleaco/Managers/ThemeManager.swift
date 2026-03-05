@@ -5,6 +5,13 @@
 
 import SwiftUI
 
+// MARK: - Design Guidelines
+struct Theme {
+    static let cardCornerRadius: CGFloat = 22
+    static let buttonPadding: CGFloat = 14
+    static let standardCardHeight: CGFloat = 68
+}
+
 extension Color {
     static var appAccent: Color { Color("AppTint") }
     
@@ -111,14 +118,14 @@ struct ProminentButtonStyle: ButtonStyle {
         configuration.label
             .font(.headline.weight(.semibold))
             .foregroundColor(.white)
-            .padding(.vertical, 14)
             .frame(maxWidth: .infinity)
+            .frame(height: 56) // Standard button height
             .background(
-                RoundedRectangle(cornerRadius: 22)
+                RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
                     .fill(LinearGradient.accentGradient)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 22)
+                RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
                     .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5)
             )
             .shadow(color: Color.glowAccent, radius: 10, y: 5)
@@ -135,14 +142,14 @@ struct SecondaryButtonStyle: ButtonStyle {
         configuration.label
             .font(.subheadline.weight(.medium))
             .foregroundColor(isDestructive ? .red : .primary)
-            .padding(.vertical, 12)
             .frame(maxWidth: .infinity)
+            .frame(height: 56) // Standard button height
             .background(
-                RoundedRectangle(cornerRadius: 22)
+                RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
                     .fill(Color.surfaceSecondary)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 22)
+                RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
                     .strokeBorder(Color.subtleBorder, lineWidth: 0.5)
             )
             .scaleEffect(configuration.isPressed ? 0.98 : 1.0)

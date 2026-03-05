@@ -18,18 +18,15 @@ struct ContentView: View {
             ZStack {
                 switch selectedTab {
                 case 0:
-                    HomeView()
-                        .transition(.opacity)
-                case 1:
                     LibraryView()
                         .transition(.opacity)
-                case 2:
+                case 1:
                     AudioView()
                         .transition(.opacity)
-                case 3:
+                case 2:
                     RemoteView()
                         .transition(.opacity)
-                case 4:
+                case 3:
                     DevicesView()
                         .transition(.opacity)
                 default:

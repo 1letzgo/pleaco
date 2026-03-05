@@ -61,7 +61,9 @@ class PatternEngine {
     
     static func generateValue(_ preset: DeviceWavePreset, time: Double) -> Double {
         switch preset {
-        case .sine75:     return 1.0
+        case .low:        return 0.3
+        case .medium:     return 0.6
+        case .high:       return 1.0
         case .foreplay:   return (sin(time * .pi * 2.0) + 1.0) / 2.0
         case .texture:
             let base = (sin(time * .pi * 12.0) + 1.0) / 2.0

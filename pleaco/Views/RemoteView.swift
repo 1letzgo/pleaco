@@ -18,10 +18,6 @@ struct RemoteView: View {
                 // 1. Remote Session
                 remoteSection
 
-                // 2. Manual Control (only when connected)
-                if remote.state == .connected {
-                    TouchControlView()
-                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 18)
@@ -55,7 +51,7 @@ struct RemoteView: View {
     // MARK: - Disconnected
     
     private var disconnectedCard: some View {
-        VStack(spacing: 12) { // Reduced spacing between row elements
+        VStack(spacing: 12) {
             // Join Input Field (Premium Style)
             VStack(spacing: 8) {
                 HStack(spacing: 12) {
@@ -75,10 +71,10 @@ struct RemoteView: View {
                 }
                 .padding(12)
                 .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(Color.cardBackground) // Same color as normal cards
+                    RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
+                        .fill(Color.cardBackground)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 16)
+                            RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
                                 .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
                         )
                 )
@@ -96,7 +92,7 @@ struct RemoteView: View {
                     }
                     .font(.system(size: 16, weight: .bold))
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
+                    .frame(height: Theme.standardCardHeight)
                 }
                 .buttonStyle(SecondaryButtonStyle())
                 
@@ -110,7 +106,7 @@ struct RemoteView: View {
                     }
                     .font(.system(size: 16, weight: .bold))
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
+                    .frame(height: Theme.standardCardHeight)
                 }
                 .buttonStyle(ProminentButtonStyle())
                 .disabled(joinCode.count != 6)
@@ -123,26 +119,32 @@ struct RemoteView: View {
 
     private var hostingCard: some View {
         VStack(spacing: 12) {
-            VStack(spacing: 8) {
-                Text("Your Code")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+            VStack(spacing: 16) {
+                Text("YOUR CODE")
+                    .font(.system(size: 13, weight: .bold))
+                    .tracking(1.5)
+                    .foregroundColor(Color.appAccent.opacity(0.8))
 
                 Text(remote.roomCode.isEmpty ? "..." : remote.roomCode)
-                    .font(.system(size: 36, weight: .bold, design: .monospaced))
+                    .font(.system(size: 42, weight: .black, design: .monospaced))
                     .foregroundColor(Color.appAccent)
                     .textSelection(.enabled)
+                    .shadow(color: Color.appAccent.opacity(0.15), radius: 8)
+                
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .tint(Color.appAccent.opacity(0.8))
+                        .scaleEffect(0.8)
+                    Text("WAITING FOR PARTNER...")
+                        .font(.system(size: 12, weight: .bold))
+                        .tracking(1.2)
+                        .foregroundColor(.secondary.opacity(0.8))
+                }
+                .padding(.top, 4)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 20)
+            .padding(.vertical, 28)
             .appCardStyle()
-
-            HStack(spacing: 8) {
-                ProgressView()
-                Text("Waiting for partner...")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-            }
 
             cancelButton
         }
@@ -185,20 +187,61 @@ struct RemoteView: View {
                 Text("Partner connected")
                     .font(.subheadline.bold())
                 
+                if !remote.partnerDevice.isEmpty && remote.partnerDevice != "No Device" {
+                    Text("(\(remote.partnerDevice))")
+                        .font(.caption.bold())
+                        .foregroundColor(.white.opacity(0.6))
+                }
+                
                 Spacer()
                 
-                Text("LIVE")
-                    .font(.system(size: 10, weight: .black))
-                    .foregroundColor(Color.appAccent)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Capsule().fill(Color.white))
+                HStack(spacing: 4) {
+                    Text("\(remote.partnerPing)ms")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.7))
+                    
+                    Text("LIVE")
+                        .font(.system(size: 10, weight: .black))
+                        .foregroundColor(Color.appAccent)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(Color.white))
+                }
             }
             .padding(.horizontal, 16)
             .frame(maxWidth: .infinity)
             .frame(height: 52)
             .appCardStyle(isSelected: true)
             .foregroundColor(.white)
+
+            // Role Selection (Premium Picker) - Now only visible when connected
+            HStack(spacing: 8) {
+                ForEach(RemoteRole.allCases) { role in
+                    Button {
+                        remote.role = role
+                    } label: {
+                        Text(role.rawValue)
+                            .font(.system(size: 14, weight: .bold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(
+                                RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
+                                    .fill(remote.role == role ? AnyShapeStyle(LinearGradient.accentGradient) : AnyShapeStyle(Color.clear))
+                            )
+                            .foregroundColor(remote.role == role ? .white : .secondary)
+                    }
+                    .buttonStyle(ScaleButtonStyle())
+                }
+            }
+            .padding(4)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
+                    .fill(Color.cardBackground)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
+                            .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+                    )
+            )
 
             // Incoming Activity Card
             HStack {
@@ -220,11 +263,34 @@ struct RemoteView: View {
             .frame(height: 80)
             .appCardStyle(isSelected: false)
 
+            if remote.role == .sender {
+                // Info for Sender
+                HStack(spacing: 8) {
+                    Image(systemName: "info.circle.fill")
+                        .font(.caption)
+                    Text("You are controlling your partner's device.")
+                        .font(.caption)
+                }
+                .foregroundColor(.secondary)
+                .padding(.top, 4)
+            } else if remote.role == .receiver {
+                // Info for Receiver
+                HStack(spacing: 8) {
+                    Image(systemName: "hand.raised.fill")
+                        .font(.caption)
+                    Text("Local control is locked. Waiting for partner signal.")
+                        .font(.caption)
+                }
+                .foregroundColor(.secondary)
+                .padding(.top, 4)
+            }
+
             // Disconnect Button (styled like Cancel button)
             Button {
                 remote.disconnect()
             } label: {
                 Text("Disconnect Session")
+                    .frame(height: Theme.standardCardHeight)
             }
             .buttonStyle(SecondaryButtonStyle(isDestructive: true))
         }
@@ -252,6 +318,6 @@ struct RemoteView: View {
                 .padding(12)
                 .appCardStyle()
         }
-        .padding(.top, 12)
+        .padding(.top, 16)
     }
 }

@@ -73,9 +73,7 @@ struct LoveSpouseControlView: View {
                 }
             }
         } label: {
-            Label("Geschwindigkeit", systemImage: "hare.fill")
-                .font(.caption)
-                .foregroundColor(.secondary)
+            SectionHeader(title: "Geschwindigkeit", icon: "hare.fill")
                 .textCase(nil)
         }
         .groupBoxStyle(PlainGroupBoxStyle())
@@ -100,9 +98,7 @@ struct LoveSpouseControlView: View {
                 }
             }
         } label: {
-            Label("Muster", systemImage: "waveform.path")
-                .font(.caption)
-                .foregroundColor(.secondary)
+            SectionHeader(title: "Muster", icon: "waveform.path")
                 .textCase(nil)
         }
         .groupBoxStyle(PlainGroupBoxStyle())
@@ -154,13 +150,13 @@ private struct ProgramButton: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 16)
             .background(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
                     .fill(isActive
                           ? LinearGradient.accentGradient
                           : LinearGradient(colors: [Color.cardBackground], startPoint: .top, endPoint: .bottom)
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: 16)
+                        RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
                             .strokeBorder(isActive ? Color.clear : Color.subtleBorder, lineWidth: 0.5)
                     )
             )
@@ -177,15 +173,14 @@ private struct PlainGroupBoxStyle: GroupBoxStyle {
     func makeBody(configuration: Configuration) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             configuration.label
-                .padding(.horizontal, 4)
             configuration.content
         }
         .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 20)
+            RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
                 .fill(Color.cardBackground)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 20)
+                    RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
                         .strokeBorder(Color.subtleBorder, lineWidth: 0.5)
                 )
         )

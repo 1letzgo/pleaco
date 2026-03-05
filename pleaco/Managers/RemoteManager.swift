@@ -15,17 +15,29 @@ enum RemoteState: Equatable {
 }
 
 enum RemoteRole: String, CaseIterable, Identifiable {
-    case controller = "Controller"
+    case sender = "Sender"
     case receiver = "Receiver"
-    case bidirectional = "Bidirectional"
+    case dual = "Dual"
 
     var id: String { rawValue }
 }
 
-/// Message protocol (encrypted plaintext):
-/// - "L80.0"  → level (0-100)
-/// - "P3"     → select LoveSpouse program (1-9)
-/// - "S"      → stop playback
+/// Message protocol (encrypted JSON):
+struct RemotePayload: Codable {
+    enum Command: String, Codable {
+        case level = "L"
+        case program = "P"
+        case stop = "S"
+        case handshake = "H"
+    }
+    
+    let c: Command         // command
+    var v: Double? = nil   // value (level)
+    var i: Int? = nil      // index (program)
+    var d: String? = nil   // device name/type
+    var t: TimeInterval    // timestamp (for latency & watchdog)
+}
+
 class RemoteManager: ObservableObject {
     static let shared = RemoteManager()
 
@@ -33,7 +45,12 @@ class RemoteManager: ObservableObject {
     @Published var roomCode: String = ""
     @Published var partnerConnected: Bool = false
     @Published var incomingLevel: Double = 0
-    @Published var role: RemoteRole = .bidirectional
+    @Published var partnerDevice: String = ""
+    @Published var partnerPing: Int = 0
+    @Published var role: RemoteRole = .dual
+    
+    /// Triggered on every valid received relay payload to reset watchdog
+    let signalPulse = PassthroughSubject<Void, Never>()
     @Published var serverAddress: String {
         didSet { UserDefaults.standard.set(serverAddress, forKey: "remoteServerAddress") }
     }
@@ -44,6 +61,7 @@ class RemoteManager: ObservableObject {
     private var webSocket: URLSessionWebSocketTask?
     private let session: URLSession
     private var encryptionKey: SymmetricKey?
+    private var lastSendTime: TimeInterval = 0
     private var heartbeatTimer: Timer?
 
     private init() {
@@ -102,22 +120,37 @@ class RemoteManager: ObservableObject {
     // MARK: - Send Commands (encrypted)
 
     func sendLevel(_ level: Double) {
-        sendEncrypted(String(format: "L%.1f", level))
+        sendPayload(RemotePayload(c: .level, v: level, t: Date().timeIntervalSince1970))
     }
 
     func sendProgram(_ index: Int) {
-        sendEncrypted("P\(index)")
+        sendPayload(RemotePayload(c: .program, i: index, t: Date().timeIntervalSince1970))
     }
 
     func sendStop() {
-        sendEncrypted("S")
+        sendPayload(RemotePayload(c: .stop, t: Date().timeIntervalSince1970))
+    }
+    
+    func sendHandshake(device: String) {
+        sendPayload(RemotePayload(c: .handshake, d: device, t: Date().timeIntervalSince1970))
     }
 
-    private func sendEncrypted(_ plaintext: String) {
+    private func sendPayload(_ payload: RemotePayload) {
         guard state == .connected, let key = encryptionKey else { return }
-        guard let data = plaintext.data(using: .utf8) else { return }
+        if role == .receiver { return }
+        
+        // Throttle Level updates to 20Hz (50ms)
+        let now = Date().timeIntervalSince1970
+        if payload.c == .level && (now - lastSendTime < 0.05) {
+            return
+        }
+        
+        if payload.c == .level {
+            lastSendTime = now
+        }
 
         do {
+            let data = try JSONEncoder().encode(payload)
             let sealed = try AES.GCM.seal(data, using: key)
             guard let combined = sealed.combined else { return }
 
@@ -127,7 +160,7 @@ class RemoteManager: ObservableObject {
             ]
             sendJSON(msg)
         } catch {
-            NSLog("🔔 RemoteManager: Encrypt error: \(error)")
+            NSLog("🔔 RemoteManager: Encrypt/Encode error: \(error)")
         }
     }
 
@@ -145,6 +178,7 @@ class RemoteManager: ObservableObject {
             self.roomCode = ""
             self.partnerConnected = false
             self.incomingLevel = 0
+            DeviceManager.shared.stop()
         }
     }
 
@@ -230,45 +264,52 @@ class RemoteManager: ObservableObject {
         do {
             let box = try AES.GCM.SealedBox(combined: combined)
             let decrypted = try AES.GCM.open(box, using: key)
-            guard let command = String(data: decrypted, encoding: .utf8) else { return }
+            let payload = try JSONDecoder().decode(RemotePayload.self, from: decrypted)
 
             DispatchQueue.main.async {
-                self.applyRemoteCommand(command)
+                // Calculate latency (ping)
+                let rtt = Date().timeIntervalSince1970 - payload.t
+                self.partnerPing = Int(rtt * 1000)
+                self.signalPulse.send()
+                self.applyRemotePayload(payload)
             }
         } catch {
-            NSLog("🔔 RemoteManager: Decrypt error: \(error)")
+            NSLog("🔔 RemoteManager: Decrypt/Decode error: \(error)")
         }
     }
 
-    private func applyRemoteCommand(_ command: String) {
+    private func applyRemotePayload(_ payload: RemotePayload) {
+        // Sender role does not receive/apply commands
+        if role == .sender { return }
+        
         let dm = DeviceManager.shared
         isApplyingRemoteLevel = true
 
-        if command.hasPrefix("L") {
-            // Level command: "L80.0"
-            guard let level = Double(command.dropFirst()) else {
-                isApplyingRemoteLevel = false
-                return
+        switch payload.c {
+        case .level:
+            if let level = payload.v {
+                incomingLevel = level
+                if !dm.isPlaying {
+                    dm.isPlaying = true
+                }
+                dm.setLevel(level)
             }
-            incomingLevel = level
-            if !dm.isManualControlActive {
-                dm.applyManualControl()
+            
+        case .program:
+            if let index = payload.i {
+                NSLog("🔔 RemoteManager: Received program \(index)")
+                dm.selectLoveSpouseProgram(index)
             }
-            dm.setLevel(level)
-
-        } else if command.hasPrefix("P") {
-            // Program command: "P3"
-            guard let index = Int(command.dropFirst()) else {
-                isApplyingRemoteLevel = false
-                return
-            }
-            NSLog("🔔 RemoteManager: Received program \(index)")
-            dm.selectLoveSpouseProgram(index)
-
-        } else if command == "S" {
-            // Stop command
+            
+        case .stop:
             NSLog("🔔 RemoteManager: Received stop")
             dm.stop()
+            
+        case .handshake:
+            if let device = payload.d {
+                NSLog("🔔 RemoteManager: Partner handshake: \(device)")
+                self.partnerDevice = device
+            }
         }
 
         isApplyingRemoteLevel = false

@@ -39,16 +39,16 @@ struct PlayerView: View {
     private var artworkSection: some View {
         ZStack {
             // Warm card background
-            RoundedRectangle(cornerRadius: 28)
+            RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
                 .fill(Color.cardBackground)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 28)
+                    RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
                         .strokeBorder(Color.subtleBorder, lineWidth: 0.5)
                 )
 
             // Soft bloom vignette when playing
             if deviceManager.isPlaying {
-                RoundedRectangle(cornerRadius: 28)
+                RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
                     .fill(
                         RadialGradient(
                             colors: [Color.appAccent.opacity(0.12), .clear],
@@ -89,14 +89,11 @@ struct PlayerView: View {
     private var intensitySection: some View {
         VStack(spacing: 12) {
             HStack {
-                Text("INTENSITY")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                SectionHeader(title: "Intensity", icon: "slider.horizontal.3")
                 Spacer()
                 Text("\(Int(deviceManager.currentLevel))%")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.secondary)
+                    .font(.subheadline.bold())
+                    .foregroundColor(Color.appAccent.opacity(0.8))
                     .monospacedDigit()
             }
 
@@ -108,10 +105,10 @@ struct PlayerView: View {
         }
         .padding(20)
         .background(
-            RoundedRectangle(cornerRadius: 20)
+            RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
                 .fill(Color.cardBackground)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 20)
+                    RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
                         .strokeBorder(Color.subtleBorder, lineWidth: 0.5)
                 )
         )
@@ -197,15 +194,11 @@ struct PlayerView: View {
         if deviceManager.activeDevice?.type == .handy {
             VStack(spacing: 20) {
                 HStack {
-                    Text("HB RANGE")
-                        .font(.headline)
-                        .fontWeight(.bold)
-                        .foregroundColor(.secondary)
+                    SectionHeader(title: "Stroke Range", icon: "arrow.up.and.down")
                     Spacer()
                     Text("\(Int(deviceManager.strokeMin))% - \(Int(deviceManager.strokeMax))%")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.secondary)
+                        .font(.subheadline.bold())
+                        .foregroundColor(Color.appAccent.opacity(0.8))
                         .monospacedDigit()
                 }
 
@@ -218,10 +211,10 @@ struct PlayerView: View {
             }
             .padding(20)
             .background(
-                RoundedRectangle(cornerRadius: 20)
+                RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
                     .fill(Color.cardBackground)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 20)
+                        RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
                             .strokeBorder(Color.subtleBorder, lineWidth: 0.5)
                     )
             )
@@ -230,9 +223,7 @@ struct PlayerView: View {
             VStack(spacing: 28) {
                 // STROKER MODE Toggle
                 HStack {
-                    Label("STROKER MODE", systemImage: "arrow.left.and.right.circle.fill")
-                        .font(.subheadline.bold())
-                        .foregroundColor(.secondary)
+                    SectionHeader(title: "Stroker Mode", icon: "arrow.left.and.right.circle.fill")
                     Spacer()
                     Toggle("", isOn: $deviceManager.ossmStrokerMode)
                         .labelsHidden()
@@ -284,9 +275,8 @@ struct PlayerView: View {
                 if let patternIdx = Int(exactly: deviceManager.ossmManager.availablePatterns.firstIndex(of: deviceManager.currentPatternName) ?? -1),
                    let desc = deviceManager.ossmManager.patternDescriptions[patternIdx], !desc.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("DESCRIPTION")
-                            .font(.caption2.bold())
-                            .foregroundColor(.secondary)
+                        SectionHeader(title: "Description", icon: "text.alignleft")
+                            .padding(.bottom, 2)
                         Text(desc)
                             .font(.caption)
                             .foregroundColor(.secondary)
@@ -298,10 +288,10 @@ struct PlayerView: View {
             }
             .padding(20)
             .background(
-                RoundedRectangle(cornerRadius: 24)
+                RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
                     .fill(Color.cardBackground)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 24)
+                        RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
                             .strokeBorder(Color.subtleBorder, lineWidth: 0.5)
                     )
             )
@@ -325,13 +315,11 @@ struct OSSMControlSlider: View {
     var body: some View {
         VStack(spacing: 12) {
             HStack {
-                Label(title, systemImage: icon)
-                    .font(.subheadline.bold())
-                    .foregroundColor(.secondary)
+                SectionHeader(title: title, icon: icon)
                 Spacer()
                 Text("\(Int(value))%")
                     .font(.subheadline.bold())
-                    .foregroundColor(.secondary)
+                    .foregroundColor(Color.appAccent.opacity(0.8))
                     .monospacedDigit()
             }
 

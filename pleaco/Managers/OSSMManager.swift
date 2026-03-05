@@ -104,9 +104,6 @@ class OSSMManager: NSObject, ObservableObject {
         if speed > 0 && deviceState != "strokeEngine" {
             sendCommand("go:strokeEngine")
             deviceState = "strokeEngine"
-        } else if speed == 0 && deviceState != "idle" {
-            sendCommand("go:idle")
-            deviceState = "idle"
         }
     }
 

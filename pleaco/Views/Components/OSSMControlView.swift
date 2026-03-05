@@ -16,7 +16,8 @@ struct OSSMControlView: View {
                     onChanged: {
                         deviceManager.applyManualControl()
                         deviceManager.sendLevel(deviceManager.masterIntensity)
-                    }
+                    },
+                    onEnded: { }
                 )
             }
             
@@ -68,11 +69,8 @@ struct OSSMControlView: View {
                 )
             }
             
-            // Stroker Mode Toggle
             HStack {
-                Label("Stroker Mode", systemImage: "link")
-                    .font(.headline.weight(.semibold))
-                    .foregroundColor(Color.appAccent)
+                SectionHeader(title: "Stroker Mode", icon: "link")
                 
                 Spacer()
                 
@@ -92,20 +90,21 @@ struct PLEASlider: View {
     let range: ClosedRange<Double>
     let label: String
     var onChanged: (() -> Void)? = nil
+    var onEnded: (() -> Void)? = nil
     
     var body: some View {
         ZStack(alignment: .leading) {
             // Background
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
                 .fill(Color.cardBackground)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
                         .strokeBorder(Color.white.opacity(0.05), lineWidth: 1)
                 )
             
             // Fill
             GeometryReader { geometry in
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
                     .fill(
                         LinearGradient(
                             colors: [Color.appAccent.opacity(0.3), Color.appAccent],
@@ -126,8 +125,12 @@ struct PLEASlider: View {
             }
             
             // Gesture Layer
-            Slider(value: $value, in: range, onEditingChanged: { _ in
-                onChanged?()
+            Slider(value: $value, in: range, onEditingChanged: { isEditing in
+                if isEditing {
+                    onChanged?()
+                } else {
+                    onEnded?()
+                }
             })
             .opacity(0.01) // Transparent native slider for handling hit testing easily
         }

@@ -17,7 +17,7 @@ enum PatternGroup: String, CaseIterable {
         switch self {
         case .custom, .reactive: return []
         case .gentle:
-            return [.sine75, .foreplay, .texture, .slowWave, .aftercare, .ramp, .ocean, .climb]
+            return [.low, .medium, .high, .foreplay, .texture, .slowWave, .aftercare, .ramp, .ocean, .climb]
         case .rhythmic:
             return [.build1, .pulse, .fastPulse, .wave, .heartbeat, .bounce, .breathe, .staccato, .tease]
         case .intense:

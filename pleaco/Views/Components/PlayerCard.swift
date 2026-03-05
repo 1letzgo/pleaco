@@ -236,13 +236,13 @@ struct PlayerCard: View {
                             else { deviceManager.start() }
                         } label: {
                             ZStack {
-                                RoundedRectangle(cornerRadius: 16)
+                                RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
                                     .fill(Color.white.opacity(0.2))
                                     .frame(width: 144, height: 72)
                                     .scaleEffect(deviceManager.isPlaying ? 1.0 : 0.9)
                                     .animation(deviceManager.isPlaying ? .easeInOut(duration: 1.0).repeatForever(autoreverses: true) : .easeOut(duration: 0.2), value: deviceManager.isPlaying)
 
-                                RoundedRectangle(cornerRadius: 14)
+                                RoundedRectangle(cornerRadius: Theme.cardCornerRadius - 2)
                                     .fill(Color.white)
                                     .frame(width: 132, height: 60)
                                     .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
