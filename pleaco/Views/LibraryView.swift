@@ -28,10 +28,7 @@ struct LibraryView: View {
 
     private var deviceControlsSection: some View {
         Group {
-            // 1. OSSM Hardware Controls
-            if deviceManager.activeDevice?.type == .ossm {
-                OSSMControlView()
-            }
+            // 1. OSSM Hardware Controls (Removed, user wants to use MediaPlayer card instead)
             
             // 2. LoveSpouse Hardware Programs
             if deviceManager.activeDevice?.type == .lovespouse {
