@@ -15,11 +15,11 @@ class StashVideoSyncManager: ObservableObject {
 
     // MARK: - Published Channels (0.0 – 1.0)
     
-    @Published var hipIntensity: Float = 0.0      // vertical optical flow rhythm (thrust freq)
-    @Published var headIntensity: Float = 0.0     // head/neck centroid movement
-    @Published var pelvisIntensity: Float = 0.0   // hip joint (leftHip/rightHip/root) movement
-    @Published var wristIntensity: Float = 0.0    // wrist/arm speed (handjob, fingering)
-    @Published var horzIntensity: Float = 0.0     // horizontal flow dominance (sideways motion)
+    @Published var hipIntensity: Float = 0.0      // vertical rhythmic intensity
+    @Published var headIntensity: Float = 0.0     // upper tracking movement
+    @Published var pelvisIntensity: Float = 0.0   // lower core movement
+    @Published var wristIntensity: Float = 0.0    // manual action speed
+    @Published var horzIntensity: Float = 0.0     // lateral flow dominance
 
     /// Backwards-compat: toy managers subscribe to $currentIntensity
     @Published var currentIntensity: Float = 0.0

@@ -22,11 +22,11 @@ struct VideoSyncView: View {
                 // Video Player Section
                 videoPlayerSection
                 
-                // Sensitivity/Smoothing Controls (Still useful for fine-tuning)
-                fineTuningSection
-                
                 // Intensity Monitors
                 intensityMonitorSection
+                
+                // Sensitivity/Smoothing Controls (Still useful for fine-tuning)
+                fineTuningSection
                 
                 Spacer(minLength: 40)
             }
@@ -74,7 +74,7 @@ struct VideoSyncView: View {
                             .font(.system(size: 40))
                             .foregroundColor(Color.appAccent.opacity(0.6))
                         
-                        Text("Video auswählen")
+                        Text("Select Video")
                             .font(.headline)
                     }
                 }
@@ -85,7 +85,7 @@ struct VideoSyncView: View {
             }
             
             PhotosPicker(selection: $selectedItem, matching: .videos) {
-                Label("Video wählen", systemImage: "photo.on.rectangle")
+                Label("Choose Video", systemImage: "photo.on.rectangle")
                     .font(.subheadline.bold())
                     .padding(.vertical, 8)
                     .padding(.horizontal, 16)
@@ -97,14 +97,14 @@ struct VideoSyncView: View {
     
     private var fineTuningSection: some View {
         VStack(spacing: 20) {
-            SectionHeader(title: "Feinabstimmung", icon: "slider.horizontal.3")
+            SectionHeader(title: "Fine-Tuning", icon: "slider.horizontal.3")
                 .frame(maxWidth: .infinity, alignment: .leading)
             
             VStack(spacing: 16) {
                 // Sensitivity
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Text("Empfindlichkeit")
+                        Text("Sensitivity")
                             .font(.caption.bold())
                             .foregroundColor(.secondary)
                         Spacer()
@@ -119,7 +119,7 @@ struct VideoSyncView: View {
                 // Smoothing
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Text("Glättung")
+                        Text("Smoothing")
                             .font(.caption.bold())
                             .foregroundColor(.secondary)
                         Spacer()
@@ -150,11 +150,11 @@ struct VideoSyncView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             
             VStack(spacing: 12) {
-                IntensityBar(label: "Thrust (Hip)", value: syncManager.hipIntensity, color: .orange)
-                IntensityBar(label: "Pelvis Movement", value: syncManager.pelvisIntensity, color: .red)
-                IntensityBar(label: "Oral/Manual (Head)", value: syncManager.headIntensity, color: .purple)
-                IntensityBar(label: "Hand/Arm speed", value: syncManager.wristIntensity, color: .blue)
-                IntensityBar(label: "Horizontal Motion", value: syncManager.horzIntensity, color: .cyan)
+                IntensityBar(label: "Vertical Rhythm", value: syncManager.hipIntensity, color: .orange)
+                IntensityBar(label: "Core Movement", value: syncManager.pelvisIntensity, color: .red)
+                IntensityBar(label: "Shift Tempo", value: syncManager.headIntensity, color: .purple)
+                IntensityBar(label: "Action Speed", value: syncManager.wristIntensity, color: .blue)
+                IntensityBar(label: "Lateral Motion", value: syncManager.horzIntensity, color: .cyan)
                 
                 Divider()
                     .padding(.vertical, 4)
