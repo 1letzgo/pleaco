@@ -64,6 +64,12 @@ class HandyManager: ObservableObject {
             }
         }
     }
+
+    func startDirectMode() {
+        // mode 2 = HDSP (Direct Streaming) for The Handy / Oh.
+        NSLog("🔵 HandyManager (v3): Starting Direct Mode (mode 2, hdsp)")
+        sendRequest(path: "/mode2", method: "PUT", params: ["mode": 2]) { _ in }
+    }
     
     func stopMotion() {
         // Cancel any pending velocity/level updates immediately

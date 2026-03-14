@@ -95,16 +95,31 @@ class OSSMManager: NSObject, ObservableObject {
     func setLevel(_ level: Double) {
         let speed = Int(max(0, min(100, level)))
         
-        if speed != lastSentSpeed {
-            sendCommand("set:speed:\(speed)")
-            lastSentSpeed = speed
-        }
+        // Safety: If speed is 0, we can transition out of streaming or strokeEngine if needed.
+        // But for Funscript, we might stay in streaming mode even at 0 position.
         
-        // Only trigger strokeEngine mode if we aren't already there and speed > 0
-        if speed > 0 && deviceState != "strokeEngine" {
+        if speed > 0 && deviceState != "strokeEngine" && deviceState != "streaming" {
             sendCommand("go:strokeEngine")
             deviceState = "strokeEngine"
         }
+        
+        if deviceState == "streaming" {
+            setDirectPosition(level)
+        } else {
+            sendCommand("set:speed:\(speed)")
+        }
+    }
+    
+    func startStreamingMode() {
+        // go:position enters raw position mode on OSSM-Possum firmware
+        sendCommand("go:position")
+        deviceState = "streaming"
+        NSLog("🔌 OSSMManager: Entered streaming mode (go:position)")
+    }
+    
+    func setDirectPosition(_ position: Double) {
+        let val = Int(max(0, min(100, position)))
+        sendCommand("set:position:\(val)")
     }
 
     func setDepth(_ depth: Double, syncStroke: Bool = true) {

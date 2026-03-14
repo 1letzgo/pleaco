@@ -7,7 +7,7 @@ import SwiftUI
 
 struct CustomTopBar: View {
     @Binding var selectedTab: Int
-    let tabs = ["Library", "Audio", "Remote", "Devices"]
+    let tabs = ["Library", "Audio", "Video", "Remote", "Devices"]
     
     var body: some View {
         VStack(spacing: 0) {

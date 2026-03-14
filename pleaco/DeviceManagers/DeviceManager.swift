@@ -6,6 +6,7 @@
 import Foundation
 import SwiftUI
 import Combine
+import AVFoundation
 
 extension UUID {
     static let internalDeviceID = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
@@ -179,6 +180,8 @@ class DeviceManager: ObservableObject {
     @Published var masterIntensity: Double = 50 {
         didSet { UserDefaults.standard.set(masterIntensity, forKey: "masterIntensity") }
     }
+
+    @Published var activeVideoPlayer: AVPlayer? = nil
 
     @Published var audioIntensity: Double = 25 {
         didSet {
@@ -633,6 +636,9 @@ class DeviceManager: ObservableObject {
         if activeAudioTrack != nil {
             // Audio mode: play the audio track concurrently
             AudioManager.shared.play()
+        } else if let videoPlayer = activeVideoPlayer {
+            // Video Sync mode: play the video player
+            videoPlayer.play()
         } else if isManualControlActive {
             // Manual mode: just ensure idle timer is disabled, no timer needed
         } else {
@@ -647,10 +653,16 @@ class DeviceManager: ObservableObject {
 
         switch device.type {
         case .handy, .oh:
+            // Special initialization for API v3
             // Ensure hardware is ready to receive commands
             // The slide range must be set first
             handyManager.setSlideRange(min: strokeMin, max: strokeMax)
-            handyManager.startHamp()
+            if activeFunScript != nil {
+                handyManager.startDirectMode()
+            } else {
+                handyManager.startHamp()
+                handyManager.setHampVelocity(speed: currentLevel)
+            }
         case .intiface:
             break
         case .lovespouse:
@@ -664,10 +676,15 @@ class DeviceManager: ObservableObject {
                 loveSpouseManager.selectProgram(selectedLoveSpouseProgram)
             }
         case .ossm:
+            if activeFunScript != nil {
+                ossmManager.startStreamingMode()
+            }
             ossmManager.setDepth(ossmDepth)
             ossmManager.setStroke(ossmStroke)
             ossmManager.setSensation(ossmSensation)
-            ossmManager.setLevel(currentLevel)
+            if activeFunScript == nil {
+                ossmManager.setLevel(currentLevel)
+            }
         case .internal:
             hapticManager.start()
         }
@@ -688,6 +705,10 @@ class DeviceManager: ObservableObject {
         
         if activeAudioTrack != nil {
             AudioManager.shared.pause()
+        }
+        
+        if let videoPlayer = activeVideoPlayer {
+            videoPlayer.pause()
         }
         
         if activeDevice?.type == .lovespouse {
@@ -1053,7 +1074,11 @@ class DeviceManager: ObservableObject {
                 }
 
                 self.currentLevel = speed
-                self.sendLevel(speed)
+                if activeDevice?.type == .ossm || activeDevice?.type == .handy || activeDevice?.type == .oh {
+                    self.sendPosition(pos * 100.0)
+                } else {
+                    self.sendLevel(speed)
+                }
             }
             return
         }
@@ -1142,6 +1167,30 @@ class DeviceManager: ObservableObject {
             ossmManager.setLevel(level)
         case .internal:
             hapticManager.updateIntensity(level)
+        }
+    }
+
+    func sendPosition(_ position: Double) {
+        guard let device = activeDevice, device.isConnected else { return }
+        
+        // Forward to remote partner if connected
+        if RemoteManager.shared.state == .connected && !RemoteManager.shared.isApplyingRemoteLevel {
+            // We reuse sendLevel for remote for now, as it handles 0-100 values
+            RemoteManager.shared.sendLevel(position)
+        }
+
+        switch device.type {
+        case .handy, .oh:
+            handyManager.setDirectLevel(level: position)
+        case .ossm:
+            ossmManager.setDirectPosition(position)
+        case .intiface:
+            buttplugManager.setLevel(position)
+        case .lovespouse:
+            // LoveSpouse doesn't support direct position well via this protocol, fall back to level
+            sendLevel(position)
+        case .internal:
+            hapticManager.updateIntensity(position)
         }
     }
 
