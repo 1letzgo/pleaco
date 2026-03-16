@@ -24,6 +24,10 @@ class StashVideoSyncManager: ObservableObject {
     /// Backwards-compat: toy managers subscribe to $currentIntensity
     @Published var currentIntensity: Float = 0.0
 
+    @Published var videoCurrentTime: TimeInterval = 0
+    @Published var videoDuration: TimeInterval = 0
+    var isScrubbing: Bool = false
+
     @Published var isActive: Bool = false
     @Published var frameCounter: Int = 0
     @Published var lastError: String?
@@ -111,9 +115,18 @@ class StashVideoSyncManager: ObservableObject {
         videoOutput = AVPlayerItemVideoOutput(pixelBufferAttributes: settings)
         if let output = videoOutput { playerItem.add(output) }
 
+        // Load duration asynchronously
+        Task {
+            let dur = try? await playerItem.asset.load(.duration)
+            let seconds = dur?.seconds ?? 0
+            if seconds.isFinite && seconds > 0 {
+                await MainActor.run { self.videoDuration = seconds }
+            }
+        }
+
         displayLink = CADisplayLink(target: self, selector: #selector(updateDisplayLink))
         displayLink?.add(to: .main, forMode: .common)
-        
+
         // Listen for video end
         NotificationCenter.default.addObserver(self, selector: #selector(videoDidEnd), name: .AVPlayerItemDidPlayToEndTime, object: playerItem)
         
@@ -143,11 +156,23 @@ class StashVideoSyncManager: ObservableObject {
         }
 
         let itemTime = output.itemTime(forHostTime: CACurrentMediaTime())
-        self.currentPlayerTime = itemTime.seconds
+        let seconds = itemTime.seconds
+        self.currentPlayerTime = seconds
+        if seconds.isFinite && seconds >= 0 && !isScrubbing {
+            self.videoCurrentTime = seconds
+        }
         if output.hasNewPixelBuffer(forItemTime: itemTime) {
             if let pixelBuffer = output.copyPixelBuffer(forItemTime: itemTime, itemTimeForDisplay: nil) {
                 processFrame(pixelBuffer)
             }
+        }
+    }
+
+    func seekVideo(to time: TimeInterval) {
+        guard let player = DeviceManager.shared.activeVideoPlayer else { return }
+        let cmTime = CMTime(seconds: time, preferredTimescale: 600)
+        player.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
+            self?.isScrubbing = false
         }
     }
 
@@ -504,14 +529,21 @@ class StashVideoSyncManager: ObservableObject {
         // In action scenes, typical values are 1.0 – 8.0.
         // We scale it so ~3.0 pixels/frame starts to reach 1.0 saturation at mid-sensitivity (0.5).
         let normalizedVelocity = min(1.0, currentVerticalVelocity * (0.3 + s * 0.6))
-        
+
+        // horzIntensity as supplementary modulator:
+        // When the primary vertical signal is weak but lateral motion is strong
+        // (e.g. side-angle shots), horz contributes up to 30% of the velocity modulator.
+        // When vertical is already dominant, horz adds only a small boost (max +15%).
+        let horzContribution = horzIntensity * (1.0 - normalizedVelocity * 0.5) * 0.3
+        let combinedVelocity = min(1.0, normalizedVelocity + horzContribution)
+
         // Final intensity = baseSignal (overall energy) * modulator (instantaneous movement)
         // We keep the floor at 20% to ensure a clear "dip" at reversals
-        let finalValue = baseSignal * (0.2 + 0.8 * normalizedVelocity)
-        
+        let finalValue = baseSignal * (0.2 + 0.8 * combinedVelocity)
+
         if frameCounter % 15 == 0 {
-            NSLog("🌊 Wave: Vel: %.3f | NormVel: %.2f | Base: %.2f | Final: %.2f", 
-                  currentVerticalVelocity, normalizedVelocity, baseSignal, finalValue)
+            NSLog("🌊 Wave: Vel: %.3f | NormVel: %.2f | Horz: %.2f | HorzBoost: %.2f | Base: %.2f | Final: %.2f",
+                  currentVerticalVelocity, normalizedVelocity, horzIntensity, horzContribution, baseSignal, finalValue)
         }
 
         // Continuous ceiling based on sensitivity
@@ -562,6 +594,8 @@ class StashVideoSyncManager: ObservableObject {
         horzIntensity = 0
         currentIntensity = 0
         currentVerticalVelocity = 0
+        videoCurrentTime = 0
+        videoDuration = 0
         lastError = nil
     }
 }

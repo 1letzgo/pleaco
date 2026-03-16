@@ -4,13 +4,16 @@
 //
 
 import SwiftUI
+import AVKit
 
 // MARK: – Player Card (sticky)
 
 struct PlayerCard: View {
     @ObservedObject var deviceManager = DeviceManager.shared
     @StateObject private var audioManager = AudioManager.shared
+    @ObservedObject private var syncManager = StashVideoSyncManager.shared
     @State private var isExpanded: Bool = false
+    @AppStorage("videoIsMuted") private var isMuted = false
 
     private var hasSliders: Bool {
         deviceManager.activeDevice?.type != .lovespouse || deviceManager.activeAudioTrack != nil
@@ -22,7 +25,7 @@ struct PlayerCard: View {
                 // Program Label (Left)
                 Text(deviceManager.currentPatternName)
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(.white.opacity(0.5))
+                    .foregroundColor(Color.appAccent.opacity(0.7))
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -35,10 +38,10 @@ struct PlayerCard: View {
                         Image(systemName: "chevron.down")
                             .rotationEffect(.degrees(isExpanded ? 0 : 180))
                             .font(.system(size: 11, weight: .bold))
-                            .foregroundColor(.white.opacity(0.4))
+                            .foregroundColor(Color.appAccent.opacity(0.5))
                             .padding(.vertical, 8) // Doubled from 4
                             .padding(.horizontal, 12)
-                            .background(Color.white.opacity(0.05))
+                            .background(Color.appAccent.opacity(0.08))
                             .cornerRadius(8)
                     }
                 } else {
@@ -48,7 +51,7 @@ struct PlayerCard: View {
                 // Device Label (Right)
                 Text(deviceManager.activeDevice?.name ?? "No Device")
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(.white.opacity(0.5))
+                    .foregroundColor(Color.appAccent.opacity(0.7))
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
@@ -66,7 +69,7 @@ struct PlayerCard: View {
                         HStack(spacing: 12) {
                             Image(systemName: "arrow.up.and.down.and.sparkles")
                                 .font(.system(size: 14))
-                                .foregroundColor(.white.opacity(0.6))
+                                .foregroundColor(Color.appAccent.opacity(0.7))
                                 .frame(width: 24)
                             
                             RangeSlider(lowerValue: $deviceManager.strokeMin, upperValue: $deviceManager.strokeMax, range: 0...100) { editing in
@@ -77,7 +80,7 @@ struct PlayerCard: View {
                             
                             Text("\(Int(deviceManager.strokeMax))%")
                                 .font(.system(size: 10, weight: .bold).monospacedDigit())
-                                .foregroundColor(.white.opacity(0.6))
+                                .foregroundColor(Color.appAccent.opacity(0.7))
                                 .frame(width: 32, alignment: .trailing)
                         }
                     } else if deviceManager.activeDevice?.type == .ossm {
@@ -86,49 +89,49 @@ struct PlayerCard: View {
                             HStack(spacing: 12) {
                                 Image(systemName: "arrow.down.to.line.compact")
                                     .font(.system(size: 14))
-                                    .foregroundColor(.white.opacity(0.6))
+                                    .foregroundColor(Color.appAccent.opacity(0.7))
                                     .frame(width: 24)
                                 
                                 Slider(value: $deviceManager.strokeMin, in: 0...100, step: 1) { editing in
                                     if !editing { deviceManager.setStrokeRange(min: deviceManager.strokeMin, max: deviceManager.strokeMax) }
                                 }
-                                .tint(.white)
+                                .tint(Color.appAccent)
                                 
                                 Text("\(Int(deviceManager.strokeMin))%")
                                     .font(.system(size: 10, weight: .bold).monospacedDigit())
-                                    .foregroundColor(.white.opacity(0.6))
+                                    .foregroundColor(Color.appAccent.opacity(0.7))
                                     .frame(width: 32, alignment: .trailing)
                             }
                             // STROKE
                             HStack(spacing: 12) {
                                 Image(systemName: "arrow.up.and.down")
                                     .font(.system(size: 14))
-                                    .foregroundColor(.white.opacity(0.6))
+                                    .foregroundColor(Color.appAccent.opacity(0.7))
                                     .frame(width: 24)
                                 
                                 Slider(value: $deviceManager.strokeMax, in: 0...100, step: 1) { editing in
                                     if !editing { deviceManager.setStrokeRange(min: deviceManager.strokeMin, max: deviceManager.strokeMax) }
                                 }
-                                .tint(.white)
+                                .tint(Color.appAccent)
                                 
                                 Text("\(Int(deviceManager.strokeMax))%")
                                     .font(.system(size: 10, weight: .bold).monospacedDigit())
-                                    .foregroundColor(.white.opacity(0.6))
+                                    .foregroundColor(Color.appAccent.opacity(0.7))
                                     .frame(width: 32, alignment: .trailing)
                             }
                             // SENSATION
                             HStack(spacing: 12) {
                                 Image(systemName: "aqi.medium")
                                     .font(.system(size: 14))
-                                    .foregroundColor(.white.opacity(0.6))
+                                    .foregroundColor(Color.appAccent.opacity(0.7))
                                     .frame(width: 24)
                                 
                                 Slider(value: $deviceManager.ossmSensation, in: 0...100, step: 1)
-                                    .tint(.white)
+                                    .tint(Color.appAccent)
                                 
                                 Text("\(Int(deviceManager.ossmSensation))%")
                                     .font(.system(size: 10, weight: .bold).monospacedDigit())
-                                    .foregroundColor(.white.opacity(0.6))
+                                    .foregroundColor(Color.appAccent.opacity(0.7))
                                     .frame(width: 32, alignment: .trailing)
                             }
                         }
@@ -140,24 +143,54 @@ struct PlayerCard: View {
                         HStack(spacing: 12) {
                             Image(systemName: isAudio ? "bolt.horizontal.icloud.fill" : "bolt.fill")
                                 .font(.system(size: 14))
-                                .foregroundColor(.white.opacity(0.6))
+                                .foregroundColor(Color.appAccent.opacity(0.7))
                                 .frame(width: 24)
                             
                             if isAudio {
                                 Slider(value: $deviceManager.audioIntensity, in: 0...100, step: 1)
-                                    .tint(.white)
+                                    .tint(Color.appAccent)
                             } else {
                                 Slider(value: $deviceManager.masterIntensity, in: 0...100)
-                                    .tint(.white)
+                                    .tint(Color.appAccent)
                             }
                             
                             Text("\(Int(isAudio ? deviceManager.audioIntensity : deviceManager.masterIntensity))%")
                                 .font(.system(size: 10, weight: .bold).monospacedDigit())
-                                .foregroundColor(.white.opacity(0.6))
+                                .foregroundColor(Color.appAccent.opacity(0.7))
                                 .frame(width: 32, alignment: .trailing)
                         }
                     }
                     
+                    // Video scrubber (shows only when Video is active)
+                    if deviceManager.activeVideoPlayer != nil {
+                        HStack(spacing: 12) {
+                            Text(formatTime(syncManager.videoCurrentTime))
+                                .font(.system(size: 10, weight: .bold).monospacedDigit())
+                                .foregroundColor(Color.appAccent.opacity(0.7))
+                                .frame(width: 32, alignment: .leading)
+
+                            Slider(
+                                value: Binding(
+                                    get: { syncManager.videoCurrentTime },
+                                    set: { syncManager.videoCurrentTime = $0 }
+                                ),
+                                in: 0...max(1, syncManager.videoDuration)
+                            ) { editing in
+                                if editing {
+                                    syncManager.isScrubbing = true
+                                } else {
+                                    syncManager.seekVideo(to: syncManager.videoCurrentTime)
+                                }
+                            }
+                            .tint(Color.appAccent)
+
+                            Text(formatTime(syncManager.videoDuration))
+                                .font(.system(size: 10, weight: .bold).monospacedDigit())
+                                .foregroundColor(Color.appAccent.opacity(0.7))
+                                .frame(width: 32, alignment: .trailing)
+                        }
+                    }
+
                     // Audio UI (Shows only when Audio is active)
                     if deviceManager.activeAudioTrack != nil {
                         
@@ -165,15 +198,15 @@ struct PlayerCard: View {
                         HStack(spacing: 12) {
                             Image(systemName: "mic.fill")
                                 .font(.system(size: 14))
-                                .foregroundColor(.white.opacity(0.6))
+                                .foregroundColor(Color.appAccent.opacity(0.7))
                                 .frame(width: 24)
                             
                             Slider(value: $audioManager.sensitivity, in: 1...100, step: 1)
-                                .tint(.white)
+                                .tint(Color.appAccent)
                             
                             Text("\(Int(audioManager.sensitivity))%")
                                 .font(.system(size: 10, weight: .bold).monospacedDigit())
-                                .foregroundColor(.white.opacity(0.6))
+                                .foregroundColor(Color.appAccent.opacity(0.7))
                                 .frame(width: 32, alignment: .trailing)
                         }
                         
@@ -181,7 +214,7 @@ struct PlayerCard: View {
                         HStack(spacing: 12) {
                             Text(formatTime(audioManager.currentTime))
                                 .font(.system(size: 10, weight: .bold).monospacedDigit())
-                                .foregroundColor(.white.opacity(0.6))
+                                .foregroundColor(Color.appAccent.opacity(0.7))
                                 .frame(width: 32, alignment: .leading)
                             
                             Slider(
@@ -199,11 +232,11 @@ struct PlayerCard: View {
                                     audioManager.pauseTimeObserver()
                                 }
                             }
-                            .tint(.white)
+                            .tint(Color.appAccent)
                             
                             Text(formatTime(audioManager.duration))
                                 .font(.system(size: 10, weight: .bold).monospacedDigit())
-                                .foregroundColor(.white.opacity(0.6))
+                                .foregroundColor(Color.appAccent.opacity(0.7))
                                 .frame(width: 32, alignment: .trailing)
                         }
                     }
@@ -224,10 +257,16 @@ struct PlayerCard: View {
                     Spacer()
                     // Transport (Center)
                     HStack(spacing: 24) {
+                        // AirPlay — only in video mode
+                        if deviceManager.activeVideoPlayer != nil {
+                            AVRoutePickerView_PlayerCard()
+                                .frame(width: 28, height: 28)
+                        }
+
                         Button { deviceManager.selectPreviousPattern() } label: {
                             Image(systemName: "backward.fill")
                                 .font(.system(size: 20, weight: .semibold))
-                                .foregroundColor(.white)
+                                .foregroundColor(Color.appAccent)
                         }
                         .buttonStyle(.plain)
 
@@ -237,7 +276,7 @@ struct PlayerCard: View {
                         } label: {
                             ZStack {
                                 RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
-                                    .fill(Color.white.opacity(0.2))
+                                    .fill(Color.appAccent.opacity(0.2))
                                     .frame(width: 144, height: 72)
                                     .scaleEffect(deviceManager.isPlaying ? 1.0 : 0.9)
                                     .animation(deviceManager.isPlaying ? .easeInOut(duration: 1.0).repeatForever(autoreverses: true) : .easeOut(duration: 0.2), value: deviceManager.isPlaying)
@@ -245,7 +284,7 @@ struct PlayerCard: View {
                                 RoundedRectangle(cornerRadius: Theme.cardCornerRadius - 2)
                                     .fill(Color.white)
                                     .frame(width: 132, height: 60)
-                                    .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
+                                    .shadow(color: Color.appAccent.opacity(0.3), radius: 10, x: 0, y: 5)
 
                                 Image(systemName: deviceManager.isPlaying ? "pause.fill" : "play.fill")
                                     .font(.system(size: 24, weight: .bold))
@@ -259,9 +298,23 @@ struct PlayerCard: View {
                         Button { deviceManager.selectNextPattern() } label: {
                             Image(systemName: "forward.fill")
                                 .font(.system(size: 20, weight: .semibold))
-                                .foregroundColor(.white)
+                                .foregroundColor(Color.appAccent)
                         }
                         .buttonStyle(.plain)
+
+                        // Mute — only in video mode
+                        if deviceManager.activeVideoPlayer != nil {
+                            Button {
+                                isMuted.toggle()
+                                deviceManager.activeVideoPlayer?.isMuted = isMuted
+                            } label: {
+                                Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(isMuted ? Color.appAccent : Color.appAccent.opacity(0.6))
+                                    .frame(width: 28, height: 28)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                     Spacer()
                 }
@@ -298,4 +351,17 @@ struct PlayerCard: View {
         let s = Int(time) % 60
         return String(format: "%d:%02d", m, s)
     }
+}
+
+// MARK: - AirPlay button styled for the dark footer
+
+private struct AVRoutePickerView_PlayerCard: UIViewRepresentable {
+    func makeUIView(context: Context) -> AVRoutePickerView {
+        let picker = AVRoutePickerView()
+        picker.backgroundColor = .clear
+        picker.activeTintColor = UIColor(Color.appAccent)
+        picker.tintColor = UIColor(Color.appAccent.opacity(0.6))
+        return picker
+    }
+    func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
 }

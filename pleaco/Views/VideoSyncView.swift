@@ -15,14 +15,13 @@ struct VideoSyncView: View {
     @State private var selectedItem: PhotosPickerItem?
     @State private var isShowingPicker = false
     @State private var videoURL: URL?
-    @State private var isMuted = false
+    @AppStorage("videoIsMuted") private var isMuted = false
     @State private var videoAspectRatio: CGFloat = 9/16   // default: portrait
     @State private var isShowingFullscreen = false
     @State private var isShowingFileImporter = false
     @State private var alertMessage = ""
     @State private var isShowingAlert = false
-    @State private var isShowingMonitors = false
-    @State private var isShowingFineTuning = false
+    @State private var isShowingSettings = false
 
     var body: some View {
         GeometryReader { geo in
@@ -41,7 +40,7 @@ struct VideoSyncView: View {
                         Image(systemName: "video.badge.plus")
                             .font(.system(size: 48))
                             .foregroundColor(Color.appAccent.opacity(0.6))
-                        Text("Select Video")
+                        Text("Video Player")
                             .font(.headline)
                             .foregroundColor(.secondary)
                     }
@@ -56,14 +55,9 @@ struct VideoSyncView: View {
             }
         }
         // ── Popups ──
-        .sheet(isPresented: $isShowingMonitors) {
-            monitorsSheet
+        .sheet(isPresented: $isShowingSettings) {
+            settingsSheet
                 .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
-        }
-        .sheet(isPresented: $isShowingFineTuning) {
-            fineTuningSheet
-                .presentationDetents([.height(240)])
                 .presentationDragIndicator(.visible)
         }
         .onAppear {
@@ -177,52 +171,27 @@ struct VideoSyncView: View {
             Spacer()
 
             if player != nil {
-                // Mute
-                iconButton(icon: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
-                           accent: isMuted) {
-                    isMuted.toggle()
-                    player?.isMuted = isMuted
-                }
-
-                // AirPlay
-                AirPlayView()
-                    .frame(width: 36, height: 36)
-                    .background(
-                        Circle()
-                            .fill(Color.cardBackground)
-                            .overlay(Circle().strokeBorder(Color.subtleBorder, lineWidth: 0.5))
-                    )
-
                 // Fullscreen
                 iconButton(icon: "arrow.up.left.and.arrow.down.right") {
                     isShowingFullscreen = true
                 }
             }
 
-            // Monitors (with live % badge)
-            Button(action: { isShowingMonitors = true }) {
-                VStack(spacing: 1) {
-                    Image(systemName: "waveform.path.ecg")
-                        .font(.system(size: 14, weight: .semibold))
-                    Text("\(Int(syncManager.currentIntensity * 100))%")
-                        .font(.system(size: 9, weight: .bold).monospacedDigit())
-                }
-                .foregroundColor(isShowingMonitors ? Color.appAccent : Color.textPrimary)
-                .frame(width: 36, height: 36)
-                .background(
-                    Circle()
-                        .fill(isShowingMonitors ? Color.appAccent.opacity(0.15) : Color.cardBackground)
-                        .overlay(Circle().strokeBorder(
-                            isShowingMonitors ? Color.appAccent.opacity(0.4) : Color.subtleBorder,
-                            lineWidth: 0.5))
-                )
+            // Settings (Intensity + Fine-Tuning combined)
+            Button(action: { isShowingSettings = true }) {
+                Text("\(Int(syncManager.currentIntensity * 100))%")
+                    .font(.system(size: 12, weight: .bold).monospacedDigit())
+                    .foregroundColor(isShowingSettings ? Color.appAccent : Color.appAccent.opacity(0.7))
+                    .frame(width: 36, height: 36)
+                    .background(
+                        Circle()
+                            .fill(isShowingSettings ? Color.appAccent.opacity(0.15) : Color.cardBackground)
+                            .overlay(Circle().strokeBorder(
+                                isShowingSettings ? Color.appAccent.opacity(0.4) : Color.subtleBorder,
+                                lineWidth: 0.5))
+                    )
             }
             .buttonStyle(ScaleButtonStyle())
-
-            // Fine-Tuning
-            iconButton(icon: "slider.horizontal.3", accent: isShowingFineTuning) {
-                isShowingFineTuning = true
-            }
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 12)
@@ -239,7 +208,7 @@ struct VideoSyncView: View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundColor(accent ? Color.appAccent : Color.textPrimary)
+                .foregroundColor(accent ? Color.appAccent : Color.appAccent.opacity(0.7))
                 .frame(width: 36, height: 36)
                 .background(
                     Circle()
@@ -254,67 +223,60 @@ struct VideoSyncView: View {
 
     // MARK: - Sheets
 
-    private var monitorsSheet: some View {
+    private var settingsSheet: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 12) {
-                    IntensityBar(label: "Vertical Rhythm",  value: syncManager.hipIntensity,    color: .orange)
-                    IntensityBar(label: "Core Movement",    value: syncManager.pelvisIntensity, color: .red)
-                    IntensityBar(label: "Shift Tempo",      value: syncManager.headIntensity,   color: .purple)
-                    IntensityBar(label: "Action Speed",     value: syncManager.wristIntensity,  color: .blue)
-                    IntensityBar(label: "Lateral Motion",   value: syncManager.horzIntensity,   color: .cyan)
-                    Divider().padding(.vertical, 4)
-                    IntensityBar(label: "Output Intensity", value: syncManager.currentIntensity, color: Color.appAccent, isMain: true)
+                VStack(spacing: 20) {
+                    // Fine-Tuning
+                    VStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Sensitivity")
+                                    .font(.caption.bold())
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Text("\(Int(syncManager.sensitivity * 100))%")
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundColor(Color.appAccent)
+                            }
+                            Slider(value: $syncManager.sensitivity, in: 0...1)
+                                .tint(Color.appAccent)
+                        }
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Smoothing")
+                                    .font(.caption.bold())
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Text("\(Int(syncManager.smoothing * 100))%")
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundColor(Color.appAccent)
+                            }
+                            Slider(value: $syncManager.smoothing, in: 0...1)
+                                .tint(Color.appAccent)
+                        }
+                    }
+
+                    Divider()
+
+                    // Intensity Monitors
+                    VStack(spacing: 12) {
+                        IntensityBar(label: "Vertical Rhythm",  value: syncManager.hipIntensity,     color: .orange)
+                        IntensityBar(label: "Core Movement",    value: syncManager.pelvisIntensity,  color: .red)
+                        IntensityBar(label: "Shift Tempo",      value: syncManager.headIntensity,    color: .purple)
+                        IntensityBar(label: "Action Speed",     value: syncManager.wristIntensity,   color: .blue)
+                        IntensityBar(label: "Lateral Boost",    value: syncManager.horzIntensity,    color: .cyan)
+                        Divider().padding(.vertical, 4)
+                        IntensityBar(label: "Output Intensity", value: syncManager.currentIntensity, color: Color.appAccent, isMain: true)
+                    }
                 }
                 .padding(20)
             }
-            .navigationTitle("Intensity Monitors")
+            .navigationTitle("Video Sync")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { isShowingMonitors = false }
-                }
-            }
-        }
-    }
-
-    private var fineTuningSheet: some View {
-        NavigationStack {
-            VStack(spacing: 20) {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("Sensitivity")
-                            .font(.caption.bold())
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Text("\(Int(syncManager.sensitivity * 100))%")
-                            .font(.caption.monospacedDigit())
-                            .foregroundColor(Color.appAccent)
-                    }
-                    Slider(value: $syncManager.sensitivity, in: 0...1)
-                        .tint(Color.appAccent)
-                }
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("Smoothing")
-                            .font(.caption.bold())
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Text("\(Int(syncManager.smoothing * 100))%")
-                            .font(.caption.monospacedDigit())
-                            .foregroundColor(Color.appAccent)
-                    }
-                    Slider(value: $syncManager.smoothing, in: 0...1)
-                        .tint(Color.appAccent)
-                }
-                Spacer()
-            }
-            .padding(20)
-            .navigationTitle("Fine-Tuning")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { isShowingFineTuning = false }
+                    Button("Done") { isShowingSettings = false }
                 }
             }
         }
@@ -346,6 +308,7 @@ struct VideoSyncView: View {
 
         let playerItem = AVPlayerItem(asset: asset)
         let newPlayer = AVPlayer(playerItem: playerItem)
+        newPlayer.isMuted = isMuted
         self.player = newPlayer
 
         let resolvedTitle = title ?? url.deletingPathExtension().lastPathComponent
