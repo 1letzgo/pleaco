@@ -47,6 +47,10 @@ class OSSMManager: NSObject, ObservableObject {
     private var lastSentStroke: Int?
     private var lastSentSensation: Int?
 
+    // Streaming: track last sent position and timestamp for time interpolation
+    private var lastStreamPosition: Int = 0
+    private var lastStreamTime: Date = Date()
+
     private override init() {
         super.init()
         centralManager = CBCentralManager(delegate: self, queue: .main)
@@ -111,15 +115,25 @@ class OSSMManager: NSObject, ObservableObject {
     }
     
     func startStreamingMode() {
-        // go:position enters raw position mode on OSSM-Possum firmware
-        sendCommand("go:position")
+        // go:streaming enters position streaming mode on OSSM-Possum firmware
+        sendCommand("go:streaming")
         deviceState = "streaming"
-        NSLog("🔌 OSSMManager: Entered streaming mode (go:position)")
+        lastStreamPosition = 0
+        lastStreamTime = Date()
+        NSLog("🔌 OSSMManager: Entered streaming mode (go:streaming)")
     }
-    
+
     func setDirectPosition(_ position: Double) {
         let val = Int(max(0, min(100, position)))
-        sendCommand("set:position:\(val)")
+        // Calculate time delta since last command for smooth interpolation
+        let now = Date()
+        let elapsedMs = Int(now.timeIntervalSince(lastStreamTime) * 1000)
+        // Clamp time to reasonable range: min 20ms (50Hz), max 500ms
+        let timeMs = max(20, min(500, elapsedMs))
+        lastStreamPosition = val
+        lastStreamTime = now
+        // Format: stream:position:timeMs
+        sendCommand("stream:\(val):\(timeMs)")
     }
 
     func setDepth(_ depth: Double, syncStroke: Bool = true) {
@@ -163,12 +177,18 @@ class OSSMManager: NSObject, ObservableObject {
 
     func setPattern(_ patternIndex: Int) {
         let val = max(0, min(6, patternIndex))
-        sendCommand("set:pattern:\(val)")
-        deviceState = "pattern"
-        
-        // Reset sensation to 50 when pattern changes (per OSSM.svelte logic)
-        setSensation(50)
-        
+        // go:strokeEngine must be active for patterns to run continuously
+        sendCommand("go:strokeEngine")
+        deviceState = "strokeEngine"
+        // Small delay to allow mode transition before sending pattern command
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            self.sendCommand("set:pattern:\(val)")
+            self.deviceState = "pattern"
+            // Force-reset sensation throttle so the value is always sent fresh
+            self.lastSentSensation = nil
+            self.setSensation(50)
+        }
+
         // Fetch description if missing
         if patternDescriptions[val] == nil {
             lastRequestedDescriptionIndex = val
@@ -213,6 +233,8 @@ class OSSMManager: NSObject, ObservableObject {
         lastSentDepth = nil
         lastSentStroke = nil
         lastSentSensation = nil
+        lastStreamPosition = 0
+        lastStreamTime = Date()
         centralManager.stopScan()
     }
 }
@@ -277,6 +299,11 @@ extension OSSMManager: CBPeripheralDelegate {
                 self.commandCharacteristic = characteristic
                 self.isReady = true
                 NSLog("🔵 OSSMManager: Command characteristic ready")
+                // Homing: move to home position on every fresh connection
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    self.sendCommand("go:home")
+                    NSLog("🔵 OSSMManager: Sent go:home after connect")
+                }
                 connectionCompletion?(true)
                 connectionCompletion = nil
             } else if characteristic.uuid == stateCharacteristicUUID {

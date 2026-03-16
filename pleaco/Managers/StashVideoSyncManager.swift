@@ -96,13 +96,14 @@ class StashVideoSyncManager: ObservableObject {
 
     // MARK: - Setup & Control
     
-    func setup(for playerItem: AVPlayerItem, player: AVPlayer) {
+    func setup(for playerItem: AVPlayerItem, player: AVPlayer, title: String? = nil) {
         cleanup()
         self.currentItem = playerItem
 
         // Register player with DeviceManager for unified control
         DeviceManager.shared.clearAllPrograms(except: .video)
         DeviceManager.shared.activeVideoPlayer = player
+        DeviceManager.shared.activeVideoTitle = title
 
         let settings: [String: Any] = [
             kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA)
@@ -538,6 +539,7 @@ class StashVideoSyncManager: ObservableObject {
         if let currentItem = self.currentItem,
            DeviceManager.shared.activeVideoPlayer?.currentItem == currentItem {
              DeviceManager.shared.activeVideoPlayer = nil
+             DeviceManager.shared.activeVideoTitle = nil
         }
         
         videoOutput = nil

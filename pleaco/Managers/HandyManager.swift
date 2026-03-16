@@ -8,17 +8,29 @@ import Combine
 
 class HandyManager: ObservableObject {
     static let shared = HandyManager()
-    
+
     var connectionKey: String = ""
     var deviceType: String = "The Handy"
-    
+
     // API v3 Credentials
     private let baseURL = "https://www.handyfeeling.com/api/handy-rest/v3"
     private let apiKey = "Wu8AA1nDwSJl_P_pQiCdQkOnjNQjLVBL"
-    
+
     private var currentTask: URLSessionDataTask?
-    
+
+    // Monotonically increasing token — incremented on every stop/start cycle.
+    // Callbacks captured with a stale token are silently discarded to prevent
+    // out-of-order API calls from leaving the device in a broken state.
+    private var operationToken: Int = 0
+
     private init() {}
+
+    /// Cancel all in-flight control requests and invalidate pending callbacks.
+    func cancelPendingOperations() {
+        operationToken &+= 1
+        currentTask?.cancel()
+        currentTask = nil
+    }
     
     func checkConnection(completion: @escaping (Bool) -> Void) {
         guard !connectionKey.isEmpty else {
@@ -50,24 +62,27 @@ class HandyManager: ObservableObject {
     }
     
     func startHamp() {
+        let token = operationToken
         if deviceType == "Oh." {
             NSLog("🔵 HandyManager (v3): Starting Oh. (mode 0, hvp)")
             sendRequest(path: "/mode", method: "PUT", params: ["mode": 0]) { _ in
+                guard self.operationToken == token else { return }
                 self.sendRequest(path: "/hvp/start", method: "PUT") { _ in }
             }
         } else {
-            // mode 0 = HAMP for The Handy
             NSLog("🔵 HandyManager (v3): Starting The Handy (mode 0, hamp)")
             sendRequest(path: "/mode", method: "PUT", params: ["mode": 0]) { _ in
+                guard self.operationToken == token else { return }
                 self.sendRequest(path: "/hamp/start", method: "PUT") { _ in }
             }
         }
     }
 
     func startDirectMode(completion: @escaping (Bool) -> Void = { _ in }) {
-        // mode 2 = HDSP (Direct Streaming) for The Handy / Oh.
+        let token = operationToken
         NSLog("🔵 HandyManager (v3): Starting Direct Mode (mode 2, hdsp)")
         sendRequest(path: "/mode", method: "PUT", params: ["mode": 2]) { result in
+            guard self.operationToken == token else { completion(false); return }
             switch result {
             case .success: completion(true)
             case .failure: completion(false)
@@ -229,8 +244,10 @@ class HandyManager: ObservableObject {
     }
 
     func stopHSSP(completion: @escaping (Bool) -> Void = { _ in }) {
+        let token = operationToken
         NSLog("🔵 HandyManager (v3): Stopping HSSP")
         sendRequest(path: "/hssp/stop", method: "PUT") { result in
+            guard self.operationToken == token else { completion(false); return }
             switch result {
             case .success: completion(true)
             case .failure: completion(false)

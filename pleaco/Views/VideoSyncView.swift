@@ -10,67 +10,103 @@ import PhotosUI
 struct VideoSyncView: View {
     @ObservedObject var syncManager = StashVideoSyncManager.shared
     @ObservedObject var deviceManager = DeviceManager.shared
-    
+
     @State private var player: AVPlayer?
     @State private var selectedItem: PhotosPickerItem?
     @State private var isShowingPicker = false
     @State private var videoURL: URL?
     @State private var isMuted = false
-    @State private var videoAspectRatio: CGFloat = 16/9
+    @State private var videoAspectRatio: CGFloat = 9/16   // default: portrait
     @State private var isShowingFullscreen = false
     @State private var isShowingFileImporter = false
     @State private var alertMessage = ""
     @State private var isShowingAlert = false
-    
+    @State private var isShowingMonitors = false
+    @State private var isShowingFineTuning = false
+
     var body: some View {
-        ScrollView {
-            VStack(spacing: 24) {
-                // Video Player Section
-                videoPlayerSection
-                
-                // Intensity Monitors
-                intensityMonitorSection
-                
-                // Sensitivity/Smoothing Controls (Still useful for fine-tuning)
-                fineTuningSection
-                
-                Spacer(minLength: 40)
+        GeometryReader { geo in
+            ZStack(alignment: .bottom) {
+                // ── Background ──
+                Color.surfacePrimary.ignoresSafeArea()
+
+                // ── Video fills full area ──
+                if let player = player {
+                    Color.black.ignoresSafeArea()
+                    PlayerViewController(player: player, gravity: .resizeAspect)
+                        .frame(width: geo.size.width, height: geo.size.height)
+                } else {
+                    // Empty state
+                    VStack(spacing: 12) {
+                        Image(systemName: "video.badge.plus")
+                            .font(.system(size: 48))
+                            .foregroundColor(Color.appAccent.opacity(0.6))
+                        Text("Select Video")
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+
+                // ── Bottom overlay: buttons ──
+                VStack(spacing: 0) {
+                    Spacer()
+                    bottomBar
+                }
             }
-            .padding(.top, 20)
         }
-        .background(Color.surfacePrimary)
-        .onDisappear {
-            syncManager.stop()
-            player?.pause()
+        // ── Popups ──
+        .sheet(isPresented: $isShowingMonitors) {
+            monitorsSheet
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
         }
-        .onChange(of: selectedItem) { oldValue, newValue in
-            NSLog("🔵 VideoSyncView: selectedItem changed")
+        .sheet(isPresented: $isShowingFineTuning) {
+            fineTuningSheet
+                .presentationDetents([.height(240)])
+                .presentationDragIndicator(.visible)
+        }
+        .onAppear {
+            if player == nil, let existingPlayer = deviceManager.activeVideoPlayer {
+                player = existingPlayer
+                // Restore aspect ratio from the existing player item
+                if let asset = existingPlayer.currentItem?.asset as? AVURLAsset {
+                    Task {
+                        if let track = try? await asset.loadTracks(withMediaType: .video).first {
+                            let size = try? await track.load(.naturalSize)
+                            let transform = try? await track.load(.preferredTransform)
+                            if let size = size, let transform = transform {
+                                let rect = CGRect(origin: .zero, size: size).applying(transform)
+                                let w = abs(rect.width), h = abs(rect.height)
+                                if w > 0 && h > 0 {
+                                    await MainActor.run { self.videoAspectRatio = w / h }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .onChange(of: selectedItem) { _, newValue in
             Task {
                 do {
                     if let item = newValue {
-                        NSLog("🔵 VideoSyncView: Attempting to load transferable...")
                         if let movie = try await item.loadTransferable(type: VideoMovie.self) {
-                            NSLog("🔵 VideoSyncView: Video loaded successfully: \(movie.url.lastPathComponent)")
+                            NSLog("🔵 VideoSyncView: Video loaded: \(movie.originalName)")
                             await MainActor.run {
                                 self.videoURL = movie.url
-                                setupPlayer(with: movie.url)
+                                setupPlayer(with: movie.url, title: movie.originalName)
                             }
-                        } else {
-                            NSLog("⚠️ VideoSyncView: loadTransferable returned nil")
                         }
                     }
                 } catch {
-                    NSLog("❌ VideoSyncView: Error loading video: \(error)")
+                    NSLog("❌ VideoSyncView: \(error)")
                     await MainActor.run {
-                        self.alertMessage = "Could not load video: \(error.localizedDescription)"
-                        self.isShowingAlert = true
+                        alertMessage = "Could not load video: \(error.localizedDescription)"
+                        isShowingAlert = true
                     }
-                    syncManager.lastError = "Picker: \(error.localizedDescription)"
                 }
-                // Reset selection so the same item can be picked again if needed
-                await MainActor.run {
-                    self.selectedItem = nil
-                }
+                await MainActor.run { selectedItem = nil }
             }
         }
         .alert("Video Error", isPresented: $isShowingAlert) {
@@ -92,129 +128,159 @@ struct VideoSyncView: View {
         ) { result in
             switch result {
             case .success(let urls):
-                if let url = urls.first {
-                    if url.startAccessingSecurityScopedResource() {
-                        do {
-                            let localURL = try VideoMovie.copyToTemp(url: url)
-                            setupPlayer(with: localURL)
-                        } catch {
-                            self.alertMessage = "Copy failed: \(error.localizedDescription)"
-                            self.isShowingAlert = true
-                        }
-                        url.stopAccessingSecurityScopedResource()
+                if let url = urls.first, url.startAccessingSecurityScopedResource() {
+                    do {
+                        let originalName = url.deletingPathExtension().lastPathComponent
+                        let localURL = try VideoMovie.copyToTemp(url: url, originalName: originalName)
+                        setupPlayer(with: localURL, title: originalName)
+                    } catch {
+                        alertMessage = "Copy failed: \(error.localizedDescription)"
+                        isShowingAlert = true
                     }
+                    url.stopAccessingSecurityScopedResource()
                 }
             case .failure(let error):
                 syncManager.lastError = error.localizedDescription
             }
         }
     }
-    
-    // MARK: - Subcomponents
-    
-    private var videoPlayerSection: some View {
-        VStack(spacing: 16) {
-            VStack(spacing: 20) {
-                // Video Area
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.surfaceSecondary)
-                    
-                    if let player = player {
-                        PlayerViewController(player: player)
-                            .cornerRadius(12)
-                    } else {
-                        VStack(spacing: 12) {
-                            Image(systemName: "video.badge.plus")
-                                .font(.system(size: 40))
-                                .foregroundColor(Color.appAccent.opacity(0.6))
-                            
-                            Text("Select Video")
-                                .font(.headline)
-                                .foregroundColor(.secondary)
-                        }
-                    }
+
+    // MARK: - Bottom Bar
+
+    private var bottomBar: some View {
+        HStack(spacing: 10) {
+            // Choose / Change video
+            Menu {
+                Button(action: { isShowingPicker = true }) {
+                    Label("Photo Library", systemImage: "photo.on.rectangle")
                 }
-                .aspectRatio(videoAspectRatio, contentMode: .fit)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                
-                // Integrated Controls Row
-                HStack(spacing: 12) {
-                    Menu {
-                        Button(action: {
-                            isShowingPicker = true
-                        }) {
-                            Label("Photo Library", systemImage: "photo.on.rectangle")
-                        }
-                        
-                        Button(action: {
-                            isShowingFileImporter = true
-                        }) {
-                            Label("Files", systemImage: "folder")
-                        }
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "plus.circle.fill")
-                            Text(player == nil ? "Choose Video" : "Change")
-                        }
-                        .font(.subheadline.bold())
-                        .padding(.vertical, 10)
-                        .padding(.horizontal, 16)
-                        .background(Capsule().fill(Color.surfaceSecondary))
+                Button(action: { isShowingFileImporter = true }) {
+                    Label("Files", systemImage: "folder")
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: player == nil ? "plus.circle.fill" : "arrow.triangle.2.circlepath")
+                    Text(player == nil ? "Select Video" : "Change")
+                }
+                .font(.subheadline.bold())
+                .foregroundColor(Color.appAccent)
+                .padding(.vertical, 9)
+                .padding(.horizontal, 14)
+                .background(
+                    Capsule()
+                        .fill(Color.cardBackground)
                         .overlay(Capsule().strokeBorder(Color.subtleBorder, lineWidth: 0.5))
-                    }
-                    
-                    Spacer()
-                    
-                    if player != nil {
-                        HStack(spacing: 12) {
-                            Button(action: {
-                                isMuted.toggle()
-                                player?.isMuted = isMuted
-                            }) {
-                                Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .foregroundColor(isMuted ? Color.appAccent : .primary)
-                                    .frame(width: 40, height: 40)
-                                    .background(Circle().fill(Color.surfaceSecondary))
-                            }
-                            
-                            AirPlayView()
-                                .frame(width: 40, height: 40)
-                        
-                            Button(action: {
-                                isShowingFullscreen = true
-                            }) {
-                                Image(systemName: "arrow.up.left.and.arrow.down.right")
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .foregroundColor(.primary)
-                                    .frame(width: 40, height: 40)
-                                    .background(Circle().fill(Color.surfaceSecondary))
-                            }
-                        }
-                    }
+                )
+            }
+            .buttonStyle(ScaleButtonStyle())
+
+            Spacer()
+
+            if player != nil {
+                // Mute
+                iconButton(icon: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
+                           accent: isMuted) {
+                    isMuted.toggle()
+                    player?.isMuted = isMuted
+                }
+
+                // AirPlay
+                AirPlayView()
+                    .frame(width: 36, height: 36)
+                    .background(
+                        Circle()
+                            .fill(Color.cardBackground)
+                            .overlay(Circle().strokeBorder(Color.subtleBorder, lineWidth: 0.5))
+                    )
+
+                // Fullscreen
+                iconButton(icon: "arrow.up.left.and.arrow.down.right") {
+                    isShowingFullscreen = true
                 }
             }
-            .padding(20)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
-                    .fill(Color.cardBackground)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
-                            .strokeBorder(Color.subtleBorder, lineWidth: 0.5)
-                    )
-            )
-            .padding(.horizontal, 24)
+
+            // Monitors (with live % badge)
+            Button(action: { isShowingMonitors = true }) {
+                VStack(spacing: 1) {
+                    Image(systemName: "waveform.path.ecg")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("\(Int(syncManager.currentIntensity * 100))%")
+                        .font(.system(size: 9, weight: .bold).monospacedDigit())
+                }
+                .foregroundColor(isShowingMonitors ? Color.appAccent : Color.textPrimary)
+                .frame(width: 36, height: 36)
+                .background(
+                    Circle()
+                        .fill(isShowingMonitors ? Color.appAccent.opacity(0.15) : Color.cardBackground)
+                        .overlay(Circle().strokeBorder(
+                            isShowingMonitors ? Color.appAccent.opacity(0.4) : Color.subtleBorder,
+                            lineWidth: 0.5))
+                )
+            }
+            .buttonStyle(ScaleButtonStyle())
+
+            // Fine-Tuning
+            iconButton(icon: "slider.horizontal.3", accent: isShowingFineTuning) {
+                isShowingFineTuning = true
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 12)
+        .padding(.top, 10)
+        .background(
+            player != nil
+                ? AnyView(LinearGradient(colors: [.clear, .black.opacity(0.5)], startPoint: .top, endPoint: .bottom))
+                : AnyView(Color.clear)
+        )
+    }
+
+    @ViewBuilder
+    private func iconButton(icon: String, accent: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(accent ? Color.appAccent : Color.textPrimary)
+                .frame(width: 36, height: 36)
+                .background(
+                    Circle()
+                        .fill(accent ? Color.appAccent.opacity(0.15) : Color.cardBackground)
+                        .overlay(Circle().strokeBorder(
+                            accent ? Color.appAccent.opacity(0.4) : Color.subtleBorder,
+                            lineWidth: 0.5))
+                )
+        }
+        .buttonStyle(ScaleButtonStyle())
+    }
+
+    // MARK: - Sheets
+
+    private var monitorsSheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 12) {
+                    IntensityBar(label: "Vertical Rhythm",  value: syncManager.hipIntensity,    color: .orange)
+                    IntensityBar(label: "Core Movement",    value: syncManager.pelvisIntensity, color: .red)
+                    IntensityBar(label: "Shift Tempo",      value: syncManager.headIntensity,   color: .purple)
+                    IntensityBar(label: "Action Speed",     value: syncManager.wristIntensity,  color: .blue)
+                    IntensityBar(label: "Lateral Motion",   value: syncManager.horzIntensity,   color: .cyan)
+                    Divider().padding(.vertical, 4)
+                    IntensityBar(label: "Output Intensity", value: syncManager.currentIntensity, color: Color.appAccent, isMain: true)
+                }
+                .padding(20)
+            }
+            .navigationTitle("Intensity Monitors")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { isShowingMonitors = false }
+                }
+            }
         }
     }
-    
-    private var fineTuningSection: some View {
-        VStack(spacing: 20) {
-            SectionHeader(title: "Fine-Tuning", icon: "slider.horizontal.3")
-                .frame(maxWidth: .infinity, alignment: .leading)
-            
-            VStack(spacing: 16) {
-                // Sensitivity
+
+    private var fineTuningSheet: some View {
+        NavigationStack {
+            VStack(spacing: 20) {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("Sensitivity")
@@ -228,8 +294,6 @@ struct VideoSyncView: View {
                     Slider(value: $syncManager.sensitivity, in: 0...1)
                         .tint(Color.appAccent)
                 }
-                
-                // Smoothing
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("Smoothing")
@@ -243,79 +307,55 @@ struct VideoSyncView: View {
                     Slider(value: $syncManager.smoothing, in: 0...1)
                         .tint(Color.appAccent)
                 }
+                Spacer()
+            }
+            .padding(20)
+            .navigationTitle("Fine-Tuning")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { isShowingFineTuning = false }
+                }
             }
         }
-        .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
-                .fill(Color.cardBackground)
-                .overlay(
-                    RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
-                        .strokeBorder(Color.subtleBorder, lineWidth: 0.5)
-                )
-        )
-        .padding(.horizontal, 24)
     }
-    
-    private var intensityMonitorSection: some View {
-        VStack(spacing: 20) {
-            SectionHeader(title: "Intensity Monitors", icon: "waveform.path.ecg")
-                .frame(maxWidth: .infinity, alignment: .leading)
-            
-            VStack(spacing: 12) {
-                IntensityBar(label: "Vertical Rhythm", value: syncManager.hipIntensity, color: .orange)
-                IntensityBar(label: "Core Movement", value: syncManager.pelvisIntensity, color: .red)
-                IntensityBar(label: "Shift Tempo", value: syncManager.headIntensity, color: .purple)
-                IntensityBar(label: "Action Speed", value: syncManager.wristIntensity, color: .blue)
-                IntensityBar(label: "Lateral Motion", value: syncManager.horzIntensity, color: .cyan)
-                
-                Divider()
-                    .padding(.vertical, 4)
-                
-                IntensityBar(label: "Output Intensity", value: syncManager.currentIntensity, color: Color.appAccent, isMain: true)
-            }
-        }
-        .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
-                .fill(Color.cardBackground)
-                .overlay(
-                    RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
-                        .strokeBorder(Color.subtleBorder, lineWidth: 0.5)
-                )
-        )
-        .padding(.horizontal, 24)
-    }
-    
-    // MARK: - Helper Methods
-    
-    private func setupPlayer(with url: URL) {
+
+    // MARK: - Setup
+
+    private func setupPlayer(with url: URL, title: String? = nil) {
+        // Stop and discard the previous player before loading a new one
+        player?.pause()
+        player?.replaceCurrentItem(with: nil)
+        player = nil
+
         let asset = AVURLAsset(url: url)
-        
-        // Detect aspect ratio
+
         Task {
             if let track = try? await asset.loadTracks(withMediaType: .video).first {
                 let size = try? await track.load(.naturalSize)
                 let transform = try? await track.load(.preferredTransform)
                 if let size = size, let transform = transform {
                     let rect = CGRect(origin: .zero, size: size).applying(transform)
-                    let width = abs(rect.width)
-                    let height = abs(rect.height)
-                    if width > 0 && height > 0 {
-                        await MainActor.run {
-                            self.videoAspectRatio = width / height
-                        }
+                    let w = abs(rect.width), h = abs(rect.height)
+                    if w > 0 && h > 0 {
+                        await MainActor.run { self.videoAspectRatio = w / h }
                     }
                 }
             }
         }
-        
+
         let playerItem = AVPlayerItem(asset: asset)
         let newPlayer = AVPlayer(playerItem: playerItem)
         self.player = newPlayer
-        
-        // Pass both item and player to sync manager
-        syncManager.setup(for: playerItem, player: newPlayer)
+
+        let resolvedTitle = title ?? url.deletingPathExtension().lastPathComponent
+        syncManager.setup(for: playerItem, player: newPlayer, title: resolvedTitle)
+
+        // Stop first to reset isPlaying, then start — handles video-switch case where isPlaying is still true
+        DeviceManager.shared.stop()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            DeviceManager.shared.start()
+        }
     }
 }
 
@@ -323,25 +363,26 @@ struct VideoSyncView: View {
 
 struct VideoMovie: Transferable {
     let url: URL
-    
+    let originalName: String
+
     static var transferRepresentation: some TransferRepresentation {
         FileRepresentation(contentType: .item) { movie in
             SentTransferredFile(movie.url)
         } importing: { received in
-            let copy = try copyToTemp(url: received.file)
-            return VideoMovie(url: copy)
+            let originalName = received.file.deletingPathExtension().lastPathComponent
+            let copy = try copyToTemp(url: received.file, originalName: originalName)
+            return VideoMovie(url: copy, originalName: originalName)
         }
     }
-    
-    static func copyToTemp(url: URL) throws -> URL {
+
+    static func copyToTemp(url: URL, originalName: String? = nil) throws -> URL {
         let ext = url.pathExtension.lowercased()
-        let fileName = "picker_\(UUID().uuidString).\(ext.isEmpty ? "mp4" : ext)"
+        let baseName = originalName ?? url.deletingPathExtension().lastPathComponent
+        let fileName = "\(baseName).\(ext.isEmpty ? "mp4" : ext)"
         let copy = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
-        
         if FileManager.default.fileExists(atPath: copy.path) {
             try? FileManager.default.removeItem(at: copy)
         }
-        
         try FileManager.default.copyItem(at: url, to: copy)
         return copy
     }
@@ -351,17 +392,19 @@ struct VideoMovie: Transferable {
 
 struct PlayerViewController: UIViewControllerRepresentable {
     var player: AVPlayer
+    var gravity: AVLayerVideoGravity = .resizeAspect
 
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let controller = AVPlayerViewController()
         controller.player = player
-        controller.showsPlaybackControls = false // Hide all native controls
-        controller.videoGravity = .resizeAspectFill
+        controller.showsPlaybackControls = false
+        controller.videoGravity = gravity
         return controller
     }
 
     func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {
         uiViewController.player = player
+        uiViewController.videoGravity = gravity
     }
 }
 
@@ -370,10 +413,9 @@ struct AirPlayView: UIViewRepresentable {
         let picker = AVRoutePickerView()
         picker.backgroundColor = .clear
         picker.activeTintColor = UIColor(Color.appAccent)
-        picker.tintColor = .secondaryLabel
+        picker.tintColor = .white
         return picker
     }
-
     func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
 }
 
@@ -383,23 +425,22 @@ struct FullscreenPlayerView: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let controller = AVPlayerViewController()
         controller.player = player
-        controller.showsPlaybackControls = true // Enable controls in fullscreen
+        controller.showsPlaybackControls = true
         controller.videoGravity = .resizeAspect
         controller.allowsPictureInPicturePlayback = true
         return controller
     }
-
     func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {}
 }
 
-// MARK: - Subcomponents
+// MARK: - IntensityBar
 
 struct IntensityBar: View {
     let label: String
     let value: Float
     let color: Color
     var isMain: Bool = false
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
@@ -411,13 +452,11 @@ struct IntensityBar: View {
                     .font(.system(size: 10, weight: .bold).monospacedDigit())
                     .foregroundColor(color)
             }
-            
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule()
                         .fill(color.opacity(0.1))
                         .frame(height: isMain ? 8 : 4)
-                    
                     Capsule()
                         .fill(color)
                         .frame(width: geo.size.width * CGFloat(value), height: isMain ? 8 : 4)

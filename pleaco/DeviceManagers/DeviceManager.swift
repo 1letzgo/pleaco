@@ -183,6 +183,7 @@ class DeviceManager: ObservableObject {
     }
 
     @Published var activeVideoPlayer: AVPlayer? = nil
+    @Published var activeVideoTitle: String? = nil
 
     @Published var audioIntensity: Double = 25 {
         didSet {
@@ -289,6 +290,9 @@ class DeviceManager: ObservableObject {
     var currentPatternName: String {
         if isManualControlActive {
             return "Manual Intensity"
+        }
+        if let title = activeVideoTitle {
+            return title
         }
         if let track = activeAudioTrack {
             return track.name
@@ -616,8 +620,8 @@ class DeviceManager: ObservableObject {
             }
         }
 
-        // If no device is selected and no audio track, then there's nothing to do.
-        if activeDevice == nil && activeAudioTrack == nil {
+        // If no device is selected and no audio track and no video, then there's nothing to do.
+        if activeDevice == nil && activeAudioTrack == nil && activeVideoPlayer == nil {
             return
         }
 
@@ -660,14 +664,13 @@ class DeviceManager: ObservableObject {
 
         switch device.type {
         case .handy, .oh:
-            // Special initialization for API v3
-            // Ensure hardware is ready to receive commands
-            // The slide range must be set first
+            // Cancel any in-flight requests before starting a new control cycle
+            handyManager.cancelPendingOperations()
             handyManager.setSlideRange(min: strokeMin, max: strokeMax)
-            
-            // Ensure any HSSP session is stopped and then enter appropriate mode
-            handyManager.stopHSSP { [weak self] _ in
-                guard let self = self else { return }
+
+            // Stop any active HSSP session, then enter the correct mode
+            handyManager.stopHSSP { [weak self] success in
+                guard let self = self, self.isPlaying else { return }
                 DispatchQueue.main.async {
                     if (self.activeFunScript != nil || self.activeVideoPlayer != nil) && device.type != .oh {
                         NSLog("🔵 DeviceManager: Entering Direct Mode for FunScript or Video Sync")
@@ -739,9 +742,10 @@ class DeviceManager: ObservableObject {
         #endif
         
         NSLog("🛑 DeviceManager: STOP called (isPlaying: \(isPlaying))")
-        
+
+        // Cancel in-flight Handy requests and invalidate stale callbacks before issuing stop
+        handyManager.cancelPendingOperations()
         handyManager.stopMotion()
-        handyManager.stopHSSP()
         buttplugManager.stopAllDevices()
         ossmManager.stop()
         hapticManager.stop()
