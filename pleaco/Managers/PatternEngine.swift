@@ -8,13 +8,13 @@ import Foundation
 class PatternEngine {
     static let navigablePresets: [DeviceWavePreset] = DeviceWavePreset.allCases
     
-    static var cachedCurves: [DeviceWavePreset: [Double]] {
+    static let cachedCurves: [DeviceWavePreset: [Double]] = {
         var curves: [DeviceWavePreset: [Double]] = [:]
         for preset in navigablePresets {
             curves[preset] = samplePreset(preset, points: 60)
         }
         return curves
-    }
+    }()
     
     static func interpolatedPos(script: FunScriptData, atMs ms: Double) -> Double {
         guard !script.actions.isEmpty else { return 0 }

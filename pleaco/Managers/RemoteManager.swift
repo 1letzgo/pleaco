@@ -327,8 +327,8 @@ class RemoteManager: ObservableObject {
     // MARK: - Crypto
 
     private func deriveKey(from code: String) -> SymmetricKey {
-        let inputKey = SymmetricKey(data: code.data(using: .utf8)!)
-        let salt = "pleaco".data(using: .utf8)!
+        let inputKey = SymmetricKey(data: Data(code.utf8))
+        let salt = Data("pleaco".utf8)
         return HKDF<SHA256>.deriveKey(
             inputKeyMaterial: inputKey,
             salt: salt,
@@ -338,7 +338,7 @@ class RemoteManager: ObservableObject {
     }
 
     private func sha256Hex(_ input: String) -> String {
-        let digest = SHA256.hash(data: input.data(using: .utf8)!)
+        let digest = SHA256.hash(data: Data(input.utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
     }
 }

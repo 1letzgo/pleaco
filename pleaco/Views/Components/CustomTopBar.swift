@@ -7,14 +7,10 @@ import SwiftUI
 
 struct CustomTopBar: View {
     @Binding var selectedTab: Int
-    let tabs = ["Library", "Audio", "Video", "Remote", "Devices"]
+    let tabs = ["Library", "Media", "Remote", "Devices"]
     
     var body: some View {
         VStack(spacing: 0) {
-            // Gap for status bar / notch
-            Spacer(minLength: 0)
-                .frame(height: 12) // Minimum base padding
-
             HStack(spacing: 0) {
                 ForEach(0..<tabs.count, id: \.self) { index in
                     Button {
@@ -22,18 +18,17 @@ struct CustomTopBar: View {
                             selectedTab = index
                         }
                     } label: {
-                        VStack(spacing: 4) {
+                        VStack(spacing: 3) {
                             Text(tabs[index])
-                                .font(.system(size: 15, weight: selectedTab == index ? .bold : .medium))
+                                .font(.system(size: 14, weight: selectedTab == index ? .bold : .medium))
                                 .foregroundColor(selectedTab == index ? Color.appAccent : .secondary)
-                            
-                            // Active indicator dot
+
                             Circle()
                                 .fill(selectedTab == index ? Color.appAccent : Color.clear)
                                 .frame(width: 4, height: 4)
                         }
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
+                        .padding(.vertical, 8)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)

@@ -21,15 +21,12 @@ struct ContentView: View {
                     LibraryView()
                         .transition(.opacity)
                 case 1:
-                    AudioView()
+                    MediaView()
                         .transition(.opacity)
                 case 2:
-                    VideoSyncView()
-                        .transition(.opacity)
-                case 3:
                     RemoteView()
                         .transition(.opacity)
-                case 4:
+                case 3:
                     DevicesView()
                         .transition(.opacity)
                 default:

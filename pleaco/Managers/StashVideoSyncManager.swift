@@ -34,8 +34,15 @@ class StashVideoSyncManager: ObservableObject {
 
     // Vision sync is now always enabled when active
     var isVideoSyncEnabled: Bool = true
-    @AppStorage("video_sync_sensitivity") var sensitivity: Double = 0.5
-    @AppStorage("video_sync_smoothing") var smoothing: Double = 0.3
+    @AppStorage("video_sync_sensitivity") var sensitivity: Double = 0.5 {
+        didSet { cachedSensitivity = sensitivity; cachedSmoothing = smoothing }
+    }
+    @AppStorage("video_sync_smoothing") var smoothing: Double = 0.3 {
+        didSet { cachedSensitivity = sensitivity; cachedSmoothing = smoothing }
+    }
+    // Thread-safe cached copies for use on analysisQueue (avoid @AppStorage on background threads)
+    private var cachedSensitivity: Double = 0.5
+    private var cachedSmoothing: Double = 0.3
 
     @Published var isRecording: Bool = false
 
@@ -72,9 +79,17 @@ class StashVideoSyncManager: ObservableObject {
     // Wave modulation
     private var currentVerticalVelocity: Float = 0
 
+    // Scene-aware dominant channel detection
+    enum MotionChannel { case hip, head, wrist }
+    @Published var dominantChannel: MotionChannel = .hip
+    private var hipAccum: Float = 0
+    private var headAccum: Float = 0
+    private var wristAccum: Float = 0
+
     private var cancellables = Set<AnyCancellable>()
     private let analysisQueue = DispatchQueue(label: "com.pleaco.videoanalysis", qos: .userInteractive)
     private var isProcessing = false
+    private let processingLock = NSLock()
 
     // Vision requests — reused across frames
     private let segmentationRequest: VNGeneratePersonSegmentationRequest = {
@@ -171,7 +186,8 @@ class StashVideoSyncManager: ObservableObject {
     func seekVideo(to time: TimeInterval) {
         guard let player = DeviceManager.shared.activeVideoPlayer else { return }
         let cmTime = CMTime(seconds: time, preferredTimescale: 600)
-        player.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
+        let tolerance = CMTime(seconds: 0.5, preferredTimescale: 600)
+        player.seek(to: cmTime, toleranceBefore: tolerance, toleranceAfter: tolerance) { [weak self] _ in
             self?.isScrubbing = false
         }
     }
@@ -187,8 +203,10 @@ class StashVideoSyncManager: ObservableObject {
     }
 
     private func processFrame(_ pixelBuffer: CVPixelBuffer) {
-        guard !isProcessing else { return }
+        processingLock.lock()
+        guard !isProcessing else { processingLock.unlock(); return }
         isProcessing = true
+        processingLock.unlock()
         let localCounter = frameCounter
 
         analysisQueue.async { [weak self] in
@@ -290,7 +308,7 @@ class StashVideoSyncManager: ObservableObject {
         var vyAbsSum: Float = 0
         var sampleCount = 0
         // Optical flow values are in pixels. 0.35 pixels is a reasonable noise floor.
-        let noiseFloor = Float(0.35 / (sensitivity + 0.1))
+        let noiseFloor = Float(0.35 / (cachedSensitivity + 0.1))
 
         for y in stride(from: 0, to: height, by: sampleStep) {
             let rowOffset = y * floatsPerRow
@@ -323,7 +341,7 @@ class StashVideoSyncManager: ObservableObject {
         guard sampleCount > 4 else {
             DispatchQueue.main.async {
                 self.currentVerticalVelocity *= 0.7  // Rapid decay of wave pulse
-                self.hipIntensity = self.hipIntensity * Float(self.smoothing)
+                self.hipIntensity = self.hipIntensity * Float(self.cachedSmoothing)
                 self.horzIntensity *= 0.85
                 self.currentIntensity = self.computeCurrentIntensity()
             }
@@ -341,30 +359,31 @@ class StashVideoSyncManager: ObservableObject {
         if recentSpeedHistory.count > speedHistorySize { recentSpeedHistory.removeFirst() }
         let recentAvgSpeed = recentSpeedHistory.reduce(0, +) / Float(recentSpeedHistory.count)
 
-        let s = Float(sensitivity)
+        let s = Float(cachedSensitivity)
 
         let prevVy = previousDominantVy
-        // Optical flow units are pixels. 0.08 pixels average is a better threshold for noise.
-        let vertReversed = (prevVy > 0.08 && dominantVy < -0.08) || (prevVy < -0.08 && dominantVy > 0.08)
+        // Threshold raised to 0.25 px — filters camera shake and incidental motion
+        let vertReversed = (prevVy > 0.25 && dominantVy < -0.25) || (prevVy < -0.25 && dominantVy > 0.25)
         previousDominantVy = dominantVy
         previousDominantVx = dominantVx
 
         if vertReversed { reversalTimestamps.append(currentFrame) }
-        
+
         // Recalculate frequency after potential new reversal
         let updatedReversals = Float(reversalTimestamps.count)
         let updatedFreq = updatedReversals / (Float(reversalWindowFrames) / 30.0)
-        
-        let speedActive = recentAvgSpeed > (0.04 / max(0.1, s))
-        let freqRaw: Float = !speedActive || updatedReversals < 1 ? 0.0 : min(1.0, updatedFreq / 3.0)
-        
-        // Weight hip level by speed to ensure it decays naturally when motion stops
-        let hipLevel = freqRaw * min(1.0, recentAvgSpeed * 12.0)
+
+        // Raised speed threshold and require ≥2 reversals for a rhythmic signal
+        let speedActive = recentAvgSpeed > (0.08 / max(0.1, s))
+        let freqRaw: Float = !speedActive || updatedReversals < 2 ? 0.0 : min(1.0, updatedFreq / 3.0)
+
+        // Lowered multiplier 12→6 so moderate motion doesn't saturate immediately
+        let hipLevel = freqRaw * min(1.0, recentAvgSpeed * 6.0)
         self.currentVerticalVelocity = abs(dominantVy)
         
         let horzLevel = min(1.0, recentAvgSpeed * horzRatio * s * 4.0)
 
-        let sm = Float(smoothing)
+        let sm = Float(cachedSmoothing)
         DispatchQueue.main.async {
             self.hipIntensity = min(1.0, self.hipIntensity * sm + hipLevel * (1.0 - sm))
             self.horzIntensity = self.horzIntensity * 0.6 + horzLevel * 0.4
@@ -394,12 +413,12 @@ class StashVideoSyncManager: ObservableObject {
             x: points.map(\.x).reduce(0, +) / CGFloat(points.count),
             y: points.map(\.y).reduce(0, +) / CGFloat(points.count)
         )
-        let sm = Float(smoothing)
+        let sm = Float(cachedSmoothing)
         if let prev = previousHeadCentroid {
             let dx = Float(centroid.x - prev.x)
             let dy = Float(centroid.y - prev.y)
             let delta = sqrt(dx * dx + dy * dy)
-            let normalized = min(1.0, (delta / 0.10) * Float(sensitivity))
+            let normalized = min(1.0, (delta / 0.05) * Float(sensitivity))
             if normalized < 0.02 {
                 DispatchQueue.main.async { self.headIntensity *= 0.5 }
             } else {
@@ -435,7 +454,7 @@ class StashVideoSyncManager: ObservableObject {
             let dx = Float(centroid.x - prev.x)
             let dy = Float(centroid.y - prev.y)
             let delta = sqrt(dx * dx + dy * dy)
-            let s = Float(sensitivity)
+            let s = Float(cachedSensitivity)
 
             let normalized = min(1.0, (delta / 0.05) * s)
 
@@ -454,7 +473,7 @@ class StashVideoSyncManager: ObservableObject {
             let pelvisFreq = pelvisReversals / (Float(reversalWindowFrames) / 30.0)
             let pelvisLevel = normalized > 0.05 ? min(1.0, pelvisFreq / 3.0) : normalized * 0.5
 
-            let sm = Float(smoothing)
+            let sm = Float(cachedSmoothing)
             DispatchQueue.main.async {
                 self.pelvisIntensity = min(1.0, self.pelvisIntensity * sm + pelvisLevel * (1.0 - sm))
                 self.currentIntensity = self.computeCurrentIntensity()
@@ -500,14 +519,14 @@ class StashVideoSyncManager: ObservableObject {
         }
 
         let avgDelta = totalDelta / Float(count)
-        let s = Float(sensitivity)
-        let normalized = min(1.0, (avgDelta / 0.08) * s)
+        let s = Float(cachedSensitivity)
+        let normalized = min(1.0, (avgDelta / 0.04) * s)
 
         wristSpeedHistory.append(normalized)
         if wristSpeedHistory.count > wristHistorySize { wristSpeedHistory.removeFirst() }
         let smoothedWrist = min(1.0, wristSpeedHistory.reduce(0,+) / Float(wristSpeedHistory.count))
 
-        let sm = Float(smoothing)
+        let sm = Float(cachedSmoothing)
         DispatchQueue.main.async {
             if normalized < 0.03 {
                 self.wristIntensity *= 0.6
@@ -519,36 +538,51 @@ class StashVideoSyncManager: ObservableObject {
     }
 
     private func computeCurrentIntensity() -> Float {
-        let s = Float(sensitivity)
-        let thrustSignal  = (hipIntensity + pelvisIntensity) * 0.5
-        let manualSignal  = (headIntensity + wristIntensity) * 0.5
-        let baseSignal = max(thrustSignal, manualSignal)
+        let s = Float(cachedSensitivity)
 
-        // Wave logic:
-        // currentVerticalVelocity (abs(dominantVy)) is in pixels/frame.
-        // In action scenes, typical values are 1.0 – 8.0.
-        // We scale it so ~3.0 pixels/frame starts to reach 1.0 saturation at mid-sensitivity (0.5).
-        let normalizedVelocity = min(1.0, currentVerticalVelocity * (0.3 + s * 0.6))
+        // Update slow EMA accumulators (~3s window at 30fps, alpha=0.05)
+        // hipAccum uses only hipIntensity — pelvis is excluded to avoid double-counting
+        let accumAlpha: Float = 0.05
+        hipAccum   = hipAccum   * (1 - accumAlpha) + hipIntensity * accumAlpha
+        headAccum  = headAccum  * (1 - accumAlpha) + headIntensity * accumAlpha
+        wristAccum = wristAccum * (1 - accumAlpha) + wristIntensity * accumAlpha
 
-        // horzIntensity as supplementary modulator:
-        // When the primary vertical signal is weak but lateral motion is strong
-        // (e.g. side-angle shots), horz contributes up to 30% of the velocity modulator.
-        // When vertical is already dominant, horz adds only a small boost (max +15%).
-        let horzContribution = horzIntensity * (1.0 - normalizedVelocity * 0.5) * 0.3
-        let combinedVelocity = min(1.0, normalizedVelocity + horzContribution)
-
-        // Final intensity = baseSignal (overall energy) * modulator (instantaneous movement)
-        // We keep the floor at 20% to ensure a clear "dip" at reversals
-        let finalValue = baseSignal * (0.2 + 0.8 * combinedVelocity)
-
-        if frameCounter % 15 == 0 {
-            NSLog("🌊 Wave: Vel: %.3f | NormVel: %.2f | Horz: %.2f | HorzBoost: %.2f | Base: %.2f | Final: %.2f",
-                  currentVerticalVelocity, normalizedVelocity, horzIntensity, horzContribution, baseSignal, finalValue)
+        // Hysteresis: challenger needs only 1.1x to switch (was 1.3x — too hard for head/wrist)
+        let threshold: Float = 1.1
+        switch dominantChannel {
+        case .hip:
+            if headAccum > hipAccum * threshold        { dominantChannel = .head }
+            else if wristAccum > hipAccum * threshold  { dominantChannel = .wrist }
+        case .head:
+            if hipAccum > headAccum * threshold        { dominantChannel = .hip }
+            else if wristAccum > headAccum * threshold { dominantChannel = .wrist }
+        case .wrist:
+            if hipAccum > wristAccum * threshold       { dominantChannel = .hip }
+            else if headAccum > wristAccum * threshold { dominantChannel = .head }
         }
 
-        // Continuous ceiling based on sensitivity
-        let ceiling: Float = s < 0.3 ? 0.4 : (s < 0.7 ? 0.8 : 1.0)
-        return min(ceiling, finalValue)
+        let normalizedVelocity = min(1.0, currentVerticalVelocity * (0.5 + s * 1.0))
+
+        let output: Float
+        switch dominantChannel {
+        case .hip:
+            // Vertical rhythm: velocity modulates amplitude, lateral adds a small boost
+            let horzBoost = horzIntensity * (1.0 - normalizedVelocity * 0.5) * 0.3
+            output = max(hipIntensity, pelvisIntensity) * (0.05 + 0.95 * min(1.0, normalizedVelocity + horzBoost))
+        case .head:
+            // Head tempo: direct mapping, no velocity interference
+            output = headIntensity
+        case .wrist:
+            // Hand speed: direct with small lateral blend
+            output = wristIntensity * 0.9 + horzIntensity * 0.1
+        }
+
+        if frameCounter % 15 == 0 {
+            NSLog("🎯 Scene: %@ | Hip:%.2f Head:%.2f Wrist:%.2f | Out:%.2f",
+                  String(describing: dominantChannel), hipAccum, headAccum, wristAccum, output)
+        }
+
+        return min(1.0, output)
     }
 
     // MARK: - Lifecycle
@@ -594,6 +628,10 @@ class StashVideoSyncManager: ObservableObject {
         horzIntensity = 0
         currentIntensity = 0
         currentVerticalVelocity = 0
+        hipAccum = 0
+        headAccum = 0
+        wristAccum = 0
+        dominantChannel = .hip
         videoCurrentTime = 0
         videoDuration = 0
         lastError = nil

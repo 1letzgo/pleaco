@@ -5,9 +5,11 @@
 	};
 	objectVersion = 77;
 	objects = {
+
 /* Begin PBXFileReference section */
 		373FE0882F41C6D4008A5F89 /* pleaco.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = pleaco.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		373FE08A2F41C6D4008A5F89 /* pleaco */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
@@ -15,6 +17,7 @@
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
+
 /* Begin PBXFrameworksBuildPhase section */
 		373FE0852F41C6D4008A5F89 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
@@ -24,6 +27,7 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
+
 /* Begin PBXGroup section */
 		373FE07F2F41C6D4008A5F89 = {
 			isa = PBXGroup;
@@ -42,6 +46,7 @@
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
+
 /* Begin PBXNativeTarget section */
 		373FE0872F41C6D4008A5F89 /* pleaco */ = {
 			isa = PBXNativeTarget;
@@ -66,6 +71,7 @@
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
+
 /* Begin PBXProject section */
 		373FE0802F41C6D4008A5F89 /* Project object */ = {
 			isa = PBXProject;
@@ -97,6 +103,7 @@
 			);
 		};
 /* End PBXProject section */
+
 /* Begin PBXResourcesBuildPhase section */
 		373FE0862F41C6D4008A5F89 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
@@ -106,6 +113,7 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		373FE0842F41C6D4008A5F89 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -115,6 +123,7 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
 /* Begin XCBuildConfiguration section */
 		373FE0912F41C6D5008A5F89 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -321,6 +330,7 @@
 			name = Release;
 		};
 /* End XCBuildConfiguration section */
+
 /* Begin XCConfigurationList section */
 		373FE0832F41C6D4008A5F89 /* Build configuration list for PBXProject "pleaco" */ = {
 			isa = XCConfigurationList;

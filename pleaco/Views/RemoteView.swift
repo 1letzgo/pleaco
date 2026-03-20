@@ -6,11 +6,9 @@
 import SwiftUI
 
 struct RemoteView: View {
-    @StateObject private var remote = RemoteManager.shared
+    @ObservedObject private var remote = RemoteManager.shared
     @State private var joinCode: String = ""
     @State private var showServerConfig = false
-
-    private let cardHeight: CGFloat = 72
 
     var body: some View {
         ScrollView {
@@ -60,7 +58,7 @@ struct RemoteView: View {
                         .font(.system(size: 18))
                         .frame(width: 44, height: 44)
                         .background(Circle().fill(Color.appAccent.opacity(0.1)))
-                    
+
                     TextField("6-DIGIT CODE", text: $joinCode)
                         .font(.system(size: 20, weight: .bold, design: .monospaced))
                         .textInputAutocapitalization(.characters)
@@ -70,14 +68,7 @@ struct RemoteView: View {
                         }
                 }
                 .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
-                        .fill(Color.cardBackground)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
-                                .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
-                        )
-                )
+                .appCardStyle()
             }
             
             // Action Buttons Row
@@ -90,14 +81,10 @@ struct RemoteView: View {
                         Image(systemName: "plus.circle.fill")
                         Text("Create")
                     }
-                    .font(.system(size: 16, weight: .bold))
                     .foregroundColor(.appAccent)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: Theme.standardCardHeight)
                 }
                 .buttonStyle(SecondaryButtonStyle())
-                
-                // Join Button
+
                 Button {
                     remote.joinSession(code: joinCode)
                 } label: {
@@ -105,9 +92,6 @@ struct RemoteView: View {
                         Image(systemName: "arrow.right.circle.fill")
                         Text("Join")
                     }
-                    .font(.system(size: 16, weight: .bold))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: Theme.standardCardHeight)
                 }
                 .buttonStyle(ProminentButtonStyle())
                 .disabled(joinCode.count != 6)
@@ -222,14 +206,7 @@ struct RemoteView: View {
                 }
             }
             .padding(4)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
-                    .fill(Color.cardBackground)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Theme.cardCornerRadius)
-                            .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
-                    )
-            )
+            .appCardStyle()
 
             // Incoming Activity Card
             HStack {
@@ -279,7 +256,6 @@ struct RemoteView: View {
             } label: {
                 Text("Disconnect Session")
                     .foregroundColor(.appAccent)
-                    .frame(height: Theme.standardCardHeight)
             }
             .buttonStyle(SecondaryButtonStyle())
         }

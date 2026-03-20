@@ -168,7 +168,9 @@ class DeviceManager: ObservableObject {
 
     @Published var devices: [SavedDevice] = []
     @Published var activeDeviceId: UUID?
-    @Published var selectedPreset: DeviceWavePreset? = nil
+    @Published var selectedPreset: DeviceWavePreset? = nil {
+        didSet { UserDefaults.standard.set(selectedPreset?.rawValue, forKey: "selectedPreset") }
+    }
     @Published var isPlaying: Bool = false
     @Published var currentLevel: Double = 0
     @Published var strokeMin: Double = 0 {
@@ -280,7 +282,6 @@ class DeviceManager: ObservableObject {
     private var ossmSubscription: AnyCancellable?
     private var remoteWatchdogTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
-    private var lastLoveSpouseLevel: Double = -1
 
     var activeDevice: SavedDevice? {
         guard let id = activeDeviceId else { return nil }
@@ -334,18 +335,7 @@ class DeviceManager: ObservableObject {
         setupConnectionMonitoring()
         setupDeviceObservation()
         
-        // Restore manual intensity
-        self.masterIntensity = UserDefaults.standard.double(forKey: "masterIntensity")
-        if self.masterIntensity == 0 { self.masterIntensity = 50 }
-        
-        // Restore OSSM values
-        self.ossmStroke = UserDefaults.standard.object(forKey: "ossmStroke") as? Double ?? 50
-        self.ossmDepth = UserDefaults.standard.object(forKey: "ossmDepth") as? Double ?? 50
-        self.ossmSensation = UserDefaults.standard.object(forKey: "ossmSensation") as? Double ?? 50
-        self.ossmStrokerMode = UserDefaults.standard.bool(forKey: "ossmStrokerMode")
-        
-        // Push initial StrokerMode state to manager
-        ossmManager.strokerMode = ossmStrokerMode
+        // ossmManager.strokerMode is kept in sync via ossmStrokerMode.didSet (set in loadDevices)
     }
 
     private func setupDeviceObservation() {
@@ -788,7 +778,8 @@ class DeviceManager: ObservableObject {
         selectedPreset = preset
 
         // Wait 0.1s for hardware to settle after clearAllPrograms (e.g. LoveSpouse selectProgram(0))
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            guard let self else { return }
             if !self.isPlaying {
                 self.start()
             } else {
@@ -822,7 +813,8 @@ class DeviceManager: ObservableObject {
         funScriptPositionMs = 0
 
         // Wait 0.1s for hardware to settle
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            guard let self else { return }
             if !self.isPlaying { self.start() } else { self.ensureHardwareStarted() }
             self.stopWaveTimer()
             self.waveTime = 0
@@ -842,7 +834,8 @@ class DeviceManager: ObservableObject {
         AudioManager.shared.loadTrack(track)
 
         // Wait 0.1s for AVAudioEngine nodes to settle after re-setup
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            guard let self else { return }
             if !self.isPlaying {
                 self.start()
             } else {
@@ -863,7 +856,8 @@ class DeviceManager: ObservableObject {
         funScriptPositionMs = 0
 
         // Wait 0.1s for hardware to settle
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            guard let self else { return }
             if !self.isPlaying { self.start() } else { self.ensureHardwareStarted() }
             self.stopWaveTimer()
             self.waveTime = 0
@@ -939,7 +933,12 @@ class DeviceManager: ObservableObject {
 
     func selectNextPattern() {
         if shouldIgnoreLocalUI { return }
-        
+
+        if activeVideoPlayer != nil {
+            StashVideoSyncManager.shared.seekVideo(to: StashVideoSyncManager.shared.videoCurrentTime + 10)
+            return
+        }
+
         if activeAudioTrack != nil {
             AudioManager.shared.playNext()
             return
@@ -1001,7 +1000,12 @@ class DeviceManager: ObservableObject {
 
     func selectPreviousPattern() {
         if shouldIgnoreLocalUI { return }
-        
+
+        if activeVideoPlayer != nil {
+            StashVideoSyncManager.shared.seekVideo(to: max(0, StashVideoSyncManager.shared.videoCurrentTime - 10))
+            return
+        }
+
         if activeAudioTrack != nil {
             AudioManager.shared.playPrevious()
             return
@@ -1018,7 +1022,7 @@ class DeviceManager: ObservableObject {
             } else if !customScripts.isEmpty {
                 // Start of LS Programs -> Move to last Custom Script
                 selectedLoveSpouseProgram = 0
-                applyNamedFunScript(customScripts.last!)
+                if let last = customScripts.last { applyNamedFunScript(last) }
             } else {
                 // Start of LS Programs (no scripts) -> Move to last Software Preset
                 selectedLoveSpouseProgram = 0
@@ -1037,7 +1041,7 @@ class DeviceManager: ObservableObject {
                     selectLoveSpouseProgram(9)
                 } else if !customScripts.isEmpty {
                     // Start of Presets -> Back to last Custom Script
-                    applyNamedFunScript(customScripts.last!)
+                    if let last = customScripts.last { applyNamedFunScript(last) }
                 } else {
                     // Loop back to last Preset
                     applyPreset(presets.last ?? .low)
@@ -1501,6 +1505,8 @@ class DeviceManager: ObservableObject {
         }
         
         // OSSM Settings
+        ossmStroke = UserDefaults.standard.object(forKey: "ossmStroke") as? Double ?? 50
+        ossmDepth = UserDefaults.standard.object(forKey: "ossmDepth") as? Double ?? 50
         ossmSensation = UserDefaults.standard.object(forKey: "ossmSensation") as? Double ?? 50
         ossmStrokerMode = UserDefaults.standard.bool(forKey: "ossmStrokerMode")
         

@@ -10,7 +10,7 @@ import AVKit
 
 struct PlayerCard: View {
     @ObservedObject var deviceManager = DeviceManager.shared
-    @StateObject private var audioManager = AudioManager.shared
+    @ObservedObject private var audioManager = AudioManager.shared
     @ObservedObject private var syncManager = StashVideoSyncManager.shared
     @State private var isExpanded: Bool = false
     @AppStorage("videoIsMuted") private var isMuted = false
@@ -21,45 +21,6 @@ struct PlayerCard: View {
 
     var body: some View {
         VStack(spacing: 0) { // This is the single root VStack
-            HStack {
-                // Program Label (Left)
-                Text(deviceManager.currentPatternName)
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(Color.appAccent.opacity(0.7))
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                if hasSliders {
-                    Button {
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                            isExpanded.toggle()
-                        }
-                    } label: {
-                        Image(systemName: "chevron.down")
-                            .rotationEffect(.degrees(isExpanded ? 0 : 180))
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundColor(Color.appAccent.opacity(0.5))
-                            .padding(.vertical, 8) // Doubled from 4
-                            .padding(.horizontal, 12)
-                            .background(Color.appAccent.opacity(0.08))
-                            .cornerRadius(8)
-                    }
-                } else {
-                    Spacer()
-                }
-
-                // Device Label (Right)
-                Text(deviceManager.activeDevice?.name ?? "No Device")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(Color.appAccent.opacity(0.7))
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-            }
-            .frame(height: 32) // Increased from 24
-            .padding(.horizontal, 18)
-            .padding(.top, 8)
-            .padding(.bottom, 4)
-            .zIndex(2)
 
             // 1-3. Collapsible Slider Section
             if isExpanded && hasSliders {
@@ -251,18 +212,49 @@ struct PlayerCard: View {
                 .zIndex(0)
             }
             
-            // 4. Persistent Control Row
+            // Persistent Control Row
             VStack(spacing: 0) {
-                HStack(alignment: .center) {
+                // Info line: program name (left) · device name (right)
+                HStack {
+                    Text(deviceManager.currentPatternName)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(Color.appAccent.opacity(0.6))
+                        .lineLimit(1)
                     Spacer()
-                    // Transport (Center)
-                    HStack(spacing: 24) {
-                        // AirPlay — only in video mode
-                        if deviceManager.activeVideoPlayer != nil {
-                            AVRoutePickerView_PlayerCard()
-                                .frame(width: 28, height: 28)
-                        }
+                    Text(deviceManager.activeDevice?.name ?? "No Device")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(Color.appAccent.opacity(0.6))
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 18)
+                .padding(.top, 8)
+                .padding(.bottom, 2)
 
+                // Transport row: chevron (left) | ⏮ ▶ ⏭ (center) | balance spacer (right)
+                HStack(alignment: .center) {
+                    // Expand/collapse chevron
+                    if hasSliders {
+                        Button {
+                            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                                isExpanded.toggle()
+                            }
+                        } label: {
+                            Image(systemName: "chevron.up")
+                                .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(Color.appAccent.opacity(0.5))
+                                .frame(width: 36, height: 36)
+                                .background(Color.appAccent.opacity(0.08))
+                                .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Color.clear.frame(width: 36, height: 36)
+                    }
+
+                    Spacer()
+
+                    HStack(spacing: 24) {
                         Button { deviceManager.selectPreviousPattern() } label: {
                             Image(systemName: "backward.fill")
                                 .font(.system(size: 20, weight: .semibold))
@@ -301,26 +293,14 @@ struct PlayerCard: View {
                                 .foregroundColor(Color.appAccent)
                         }
                         .buttonStyle(.plain)
-
-                        // Mute — only in video mode
-                        if deviceManager.activeVideoPlayer != nil {
-                            Button {
-                                isMuted.toggle()
-                                deviceManager.activeVideoPlayer?.isMuted = isMuted
-                            } label: {
-                                Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .foregroundColor(isMuted ? Color.appAccent : Color.appAccent.opacity(0.6))
-                                    .frame(width: 28, height: 28)
-                            }
-                            .buttonStyle(.plain)
-                        }
                     }
+
                     Spacer()
+                    Color.clear.frame(width: 36, height: 36)
                 }
                 .padding(.horizontal, 18)
                 .padding(.bottom, 6)
-                .padding(.top, 12) // Push them down a bit more
+                .padding(.top, 4)
             }
             .background(Color.footerBackground)
             .zIndex(1)
